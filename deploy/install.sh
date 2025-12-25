@@ -49,7 +49,7 @@ echo -e "${CYAN}=== Select SAIC Version ===${NC}"
 echo ""
 echo "Choose which version to install:"
 echo -e "  ${CYAN}1)${NC} Classic Mode - Original simple interface (main branch)"
-echo -e "  ${CYAN}2)${NC} Pro Mode - New AI-enhanced version with music theory tools (pro-mode branch)"
+echo -e "  ${CYAN}2)${NC} Pro Mode - New AI-enhanced version with music theory tools (Pro branch)"
 echo ""
 read -p "Enter choice (1 or 2) [2]: " VERSION_CHOICE </dev/tty
 VERSION_CHOICE=${VERSION_CHOICE:-2}
@@ -60,11 +60,11 @@ case $VERSION_CHOICE in
         echo -e "${GREEN}Selected: Classic Mode (main branch)${NC}"
         ;;
     2)
-        GIT_BRANCH="pro-mode"
-        echo -e "${GREEN}Selected: Pro Mode (pro-mode branch)${NC}"
+        GIT_BRANCH="Pro"
+        echo -e "${GREEN}Selected: Pro Mode (Pro branch)${NC}"
         ;;
     *)
-        GIT_BRANCH="pro-mode"
+        GIT_BRANCH="Pro"
         echo -e "${YELLOW}Invalid choice, defaulting to Pro Mode${NC}"
         ;;
 esac
