@@ -1,4 +1,4 @@
-# Strudel AI - Deployment Scripts
+# SAIC - Deployment Scripts
 
 Deployment scripts for **Debian 13** and **Rocky Linux 9**.
 
@@ -20,7 +20,7 @@ Deployment scripts for **Debian 13** and **Rocky Linux 9**.
 ### Option 1: Quick Install (requires GitHub repo)
 
 ```bash
-curl -o install.sh https://raw.githubusercontent.com/YOUR_USERNAME/strudel-ai/main/deploy/install-debian.sh
+curl -o install.sh https://raw.githubusercontent.com/mdario971/SAIC/main/deploy/install-debian.sh
 chmod +x install.sh
 sudo bash install.sh
 ```
@@ -28,7 +28,7 @@ sudo bash install.sh
 ### Option 2: Full Install (embedded code, no GitHub needed)
 
 ```bash
-curl -o install.sh https://raw.githubusercontent.com/YOUR_USERNAME/strudel-ai/main/deploy/full-install-debian.sh
+curl -o install.sh https://raw.githubusercontent.com/mdario971/SAIC/main/deploy/full-install-debian.sh
 chmod +x install.sh
 sudo bash install.sh
 ```
@@ -48,7 +48,7 @@ sudo bash install.sh
 ### Option 1: Quick Install (requires GitHub repo)
 
 ```bash
-curl -o install.sh https://raw.githubusercontent.com/YOUR_USERNAME/strudel-ai/main/deploy/install-rocky.sh
+curl -o install.sh https://raw.githubusercontent.com/mdario971/SAIC/main/deploy/install-rocky.sh
 chmod +x install.sh
 sudo bash install.sh
 ```
@@ -56,7 +56,7 @@ sudo bash install.sh
 ### Option 2: Full Install (embedded code, no GitHub needed)
 
 ```bash
-curl -o install.sh https://raw.githubusercontent.com/YOUR_USERNAME/strudel-ai/main/deploy/full-install-rocky.sh
+curl -o install.sh https://raw.githubusercontent.com/mdario971/SAIC/main/deploy/full-install-rocky.sh
 chmod +x install.sh
 sudo bash install.sh
 ```
@@ -89,16 +89,16 @@ sudo bash install.sh
 
 ```bash
 # View logs
-pm2 logs strudel-ai
+pm2 logs saic
 
 # Restart application
-pm2 restart strudel-ai
+pm2 restart saic
 
 # Check status
 pm2 status
 
 # Stop application
-pm2 stop strudel-ai
+pm2 stop saic
 
 # Monitor resources
 pm2 monit
@@ -120,11 +120,11 @@ certbot --nginx -d yourdomain.com
 ### Update Application
 
 ```bash
-cd /opt/strudel-ai
+cd /opt/SAIC
 git pull
 npm install
 npm run build
-pm2 restart strudel-ai
+pm2 restart saic
 ```
 
 ---
@@ -171,10 +171,10 @@ journalctl -u nginx -f
 
 ```bash
 # Check PM2 logs
-pm2 logs strudel-ai --lines 50
+pm2 logs saic --lines 50
 
 # Check if .env file exists
-cat /opt/strudel-ai/.env
+cat /opt/SAIC/.env
 
 # Verify Node.js version
 node --version  # Should be v20.x
