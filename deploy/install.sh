@@ -970,6 +970,12 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${RED}Error: Please run as root: sudo saic-ssl${NC}"
+    exit 1
+fi
+
 echo -e "${CYAN}=== SAIC SSL Certificate Setup ===${NC}"
 echo ""
 
