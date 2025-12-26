@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { generateStrudelCode } from "./openai";
 import { z } from "zod";
+import Anthropic from "@anthropic-ai/sdk";
 
 const generateRequestSchema = z.object({
   prompt: z.string().min(1).max(500),
@@ -14,6 +15,14 @@ const generateRequestSchema = z.object({
     includeBass: z.boolean().optional(),
     includeSynth: z.boolean().optional(),
   }).optional(),
+});
+
+const claudeRequestSchema = z.object({
+  prompt: z.string().min(1).max(2000),
+  history: z.array(z.object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+  })).optional(),
 });
 
 export async function registerRoutes(
@@ -39,6 +48,79 @@ export async function registerRoutes(
       console.error("Generate error:", error);
       res.status(500).json({ 
         error: error instanceof Error ? error.message : "Failed to generate code",
+        success: false 
+      });
+    }
+  });
+
+  // Claude AI Assistant endpoint for server management
+  app.post("/api/claude", async (req, res) => {
+    try {
+      const anthropicKey = process.env.ANTHROPIC_API_KEY;
+      if (!anthropicKey) {
+        return res.status(503).json({ 
+          error: "Claude AI is not configured. Please add ANTHROPIC_API_KEY to your environment.",
+          success: false 
+        });
+      }
+
+      const validatedData = claudeRequestSchema.parse(req.body);
+      const { prompt, history } = validatedData;
+
+      const anthropic = new Anthropic({ apiKey: anthropicKey });
+
+      const systemPrompt = `You are a helpful server administration assistant. You help users manage their Linux server through natural language commands.
+
+When users ask you to perform server tasks, you should:
+1. Explain what you're going to do
+2. Provide the exact shell command(s) needed
+3. Wrap commands in a code block with \`\`\`bash
+
+IMPORTANT SAFETY RULES:
+- Never provide commands that could delete critical system files
+- Always warn about potentially destructive operations
+- Suggest safer alternatives when possible
+- For package installations, prefer apt/dnf depending on the system
+
+Common tasks you can help with:
+- Checking system status (disk space, memory, CPU)
+- Managing services (start, stop, restart)
+- Viewing logs
+- User management
+- Package installation
+- Network diagnostics`;
+
+      const messages = history || [];
+      messages.push({ role: "user", content: prompt });
+
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: messages.map((m: { role: string; content: string }) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content
+        })),
+      });
+
+      const assistantMessage = response.content[0].type === 'text' 
+        ? response.content[0].text 
+        : '';
+
+      res.json({ 
+        response: assistantMessage, 
+        success: true 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Invalid request format: " + error.errors.map(e => e.message).join(", "),
+          success: false 
+        });
+      }
+      console.error("Claude API error:", error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to get AI response",
         success: false 
       });
     }
