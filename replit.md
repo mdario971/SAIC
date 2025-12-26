@@ -29,6 +29,26 @@ The universal installer (`deploy/install.sh`) supports three options:
 2. **SAIC Pro** - Pro branch with embedded strudel.cc REPL
 3. **Guacamole + Claude AI** - Remote desktop with AI server assistant
 
+### Pre-Installation Cleanup
+
+The installer automatically detects and handles existing/failed installations:
+
+**Detection checks:**
+- `/opt/SAIC` directory
+- PM2 processes (saic, saic-pro)
+- Nginx configurations
+- Guacamole components (guacd, /etc/guacamole, WAR files)
+- MariaDB guacamole_db database
+- Port conflicts (5000, 8080, 4822)
+- Helper scripts (saic-ssl, saic-passwd)
+
+**User options when existing installation found:**
+1. **Clean reinstall** - Remove everything and start fresh
+2. **Upgrade in-place** - Keep configs, update code only
+3. **Abort** - Exit without changes
+
+Guacamole cleanup is handled separately with confirmation prompt.
+
 ## Project Architecture
 
 ```
