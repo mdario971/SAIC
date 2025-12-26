@@ -45,27 +45,35 @@ echo -e "${NC}"
 # VERSION SELECTION
 # =============================================
 echo ""
-echo -e "${CYAN}=== Select SAIC Version ===${NC}"
+echo -e "${CYAN}=== Select Installation Type ===${NC}"
 echo ""
-echo "Choose which version to install:"
-echo -e "  ${CYAN}1)${NC} Classic Mode - Original simple interface (main branch)"
-echo -e "  ${CYAN}2)${NC} Pro Mode - New AI-enhanced version with music theory tools (Pro branch)"
+echo "Choose what to install:"
+echo -e "  ${CYAN}1)${NC} SAIC Classic - Original simple music interface (main branch)"
+echo -e "  ${CYAN}2)${NC} SAIC Pro - AI-enhanced music with theory tools (Pro branch)"
+echo -e "  ${CYAN}3)${NC} Remote Desktop + AI - Guacamole web remote access with Claude assistant"
 echo ""
-read -p "Enter choice (1 or 2) [2]: " VERSION_CHOICE </dev/tty
+read -p "Enter choice (1, 2, or 3) [2]: " VERSION_CHOICE </dev/tty
 VERSION_CHOICE=${VERSION_CHOICE:-2}
+
+INSTALL_GUACAMOLE=false
 
 case $VERSION_CHOICE in
     1)
         GIT_BRANCH="main"
-        echo -e "${GREEN}Selected: Classic Mode (main branch)${NC}"
+        echo -e "${GREEN}Selected: SAIC Classic (main branch)${NC}"
         ;;
     2)
         GIT_BRANCH="Pro"
-        echo -e "${GREEN}Selected: Pro Mode (Pro branch)${NC}"
+        echo -e "${GREEN}Selected: SAIC Pro (Pro branch)${NC}"
+        ;;
+    3)
+        GIT_BRANCH="Pro"
+        INSTALL_GUACAMOLE=true
+        echo -e "${GREEN}Selected: Remote Desktop + AI (Guacamole + Claude)${NC}"
         ;;
     *)
         GIT_BRANCH="Pro"
-        echo -e "${YELLOW}Invalid choice, defaulting to Pro Mode${NC}"
+        echo -e "${YELLOW}Invalid choice, defaulting to SAIC Pro${NC}"
         ;;
 esac
 
@@ -252,6 +260,20 @@ if [ -z "$OPENAI_KEY" ]; then
     exit 1
 fi
 
+ANTHROPIC_KEY=""
+if [ "$INSTALL_GUACAMOLE" = true ]; then
+    echo ""
+    echo -e "${CYAN}=== Step 2b: Anthropic API Key (Required for Claude AI) ===${NC}"
+    echo ""
+    echo "Get your API key at: https://console.anthropic.com/settings/keys"
+    echo ""
+    read -p "Enter your Anthropic API key: " ANTHROPIC_KEY </dev/tty
+    if [ -z "$ANTHROPIC_KEY" ]; then
+        echo -e "${RED}Anthropic API key is required for Remote Desktop + AI option!${NC}"
+        exit 1
+    fi
+fi
+
 echo ""
 echo -e "${CYAN}=== Step 3: Password Protection (Optional) ===${NC}"
 echo ""
@@ -298,10 +320,17 @@ INSTALL_METHOD=${INSTALL_METHOD:-1}
 echo ""
 echo -e "${CYAN}=== Configuration Summary ===${NC}"
 echo ""
-echo -e "  Version:      ${GREEN}$([ "$GIT_BRANCH" == "main" ] && echo "Classic Mode" || echo "Pro Mode")${NC}"
+if [ "$INSTALL_GUACAMOLE" = true ]; then
+    echo -e "  Install:      ${GREEN}Remote Desktop + AI (Guacamole + Claude)${NC}"
+else
+    echo -e "  Version:      ${GREEN}$([ "$GIT_BRANCH" == "main" ] && echo "Classic Mode" || echo "Pro Mode")${NC}"
+fi
 echo -e "  Branch:       ${GREEN}$GIT_BRANCH${NC}"
 echo -e "  OS Type:      ${GREEN}$DETECTED_OS${NC}"
 echo -e "  OpenAI Key:   ${GREEN}sk-****${OPENAI_KEY: -4}${NC}"
+if [ -n "$ANTHROPIC_KEY" ]; then
+    echo -e "  Anthropic:    ${GREEN}sk-ant-****${ANTHROPIC_KEY: -4}${NC}"
+fi
 if [ -n "$AUTH_USER" ]; then
     echo -e "  Auth User:    ${GREEN}$AUTH_USER${NC}"
     echo -e "  Auth Pass:    ${GREEN}********${NC}"
@@ -310,6 +339,10 @@ else
 fi
 echo -e "  Port:         ${GREEN}$APP_PORT${NC}"
 echo -e "  Method:       ${GREEN}$([ "$INSTALL_METHOD" == "1" ] && echo "Git Clone" || echo "Embedded")${NC}"
+if [ "$INSTALL_GUACAMOLE" = true ]; then
+    echo -e "  Guacamole:    ${GREEN}Enabled (port 8080 -> /guac)${NC}"
+    echo -e "  Claude AI:    ${GREEN}Enabled (/assistant)${NC}"
+fi
 echo ""
 read -p "Proceed with installation? (Y/n): " CONFIRM </dev/tty
 if [[ "$CONFIRM" =~ ^[Nn]$ ]]; then
@@ -354,6 +387,187 @@ install_rocky_deps() {
 install_pm2() {
     echo -e "${BLUE}[4/8] Installing PM2...${NC}"
     npm install -g pm2
+}
+
+# =============================================
+# GUACAMOLE INSTALLATION FUNCTIONS
+# =============================================
+
+install_guacamole_debian() {
+    echo -e "${BLUE}Installing Guacamole dependencies...${NC}"
+    
+    apt install -y build-essential libcairo2-dev libjpeg62-turbo-dev \
+        libpng-dev libtool-bin uuid-dev libossp-uuid-dev libavcodec-dev \
+        libavformat-dev libavutil-dev libswscale-dev freerdp2-dev \
+        libpango1.0-dev libssh2-1-dev libvncserver-dev libtelnet-dev \
+        libwebsockets-dev libssl-dev libvorbis-dev libwebp-dev libpulse-dev \
+        tomcat9 tomcat9-admin mariadb-server
+    
+    echo -e "${BLUE}Building guacamole-server 1.5.5...${NC}"
+    GUAC_VER="1.5.5"
+    mkdir -p /tmp/guac_build && cd /tmp/guac_build
+    
+    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/source/guacamole-server-$GUAC_VER.tar.gz
+    tar xzf guacamole-server-$GUAC_VER.tar.gz
+    cd guacamole-server-$GUAC_VER
+    
+    ./configure --with-init-dir=/etc/init.d --enable-allow-freerdp-snapshots
+    make -j$(nproc)
+    make install
+    ldconfig
+    
+    cat > /etc/systemd/system/guacd.service << 'GUACDEOF'
+[Unit]
+Description=Guacamole Server
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/local/sbin/guacd
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+GUACDEOF
+
+    systemctl daemon-reload
+    systemctl enable --now guacd
+    
+    echo -e "${BLUE}Setting up Guacamole web application...${NC}"
+    mkdir -p /etc/guacamole/{extensions,lib}
+    
+    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/binary/guacamole-$GUAC_VER.war \
+        -O /var/lib/tomcat9/webapps/guacamole.war
+    
+    wget -q https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-j-8.0.33.tar.gz \
+        -O /tmp/mysql-connector.tar.gz
+    tar xzf /tmp/mysql-connector.tar.gz -C /tmp
+    cp /tmp/mysql-connector-j-8.0.33/mysql-connector-j-8.0.33.jar /etc/guacamole/lib/
+    
+    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/binary/guacamole-auth-jdbc-$GUAC_VER.tar.gz \
+        -O /tmp/guacamole-auth-jdbc.tar.gz
+    tar xzf /tmp/guacamole-auth-jdbc.tar.gz -C /tmp
+    cp /tmp/guacamole-auth-jdbc-$GUAC_VER/mysql/guacamole-auth-jdbc-mysql-$GUAC_VER.jar /etc/guacamole/extensions/
+    
+    echo -e "${BLUE}Configuring MariaDB for Guacamole...${NC}"
+    systemctl enable --now mariadb
+    
+    GUAC_DB_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 20)
+    
+    mysql -u root << SQLEOF
+CREATE DATABASE IF NOT EXISTS guacamole_db;
+CREATE USER IF NOT EXISTS 'guacamole_user'@'localhost' IDENTIFIED BY '$GUAC_DB_PASS';
+GRANT SELECT,INSERT,UPDATE,DELETE ON guacamole_db.* TO 'guacamole_user'@'localhost';
+FLUSH PRIVILEGES;
+SQLEOF
+    
+    cat /tmp/guacamole-auth-jdbc-$GUAC_VER/mysql/schema/*.sql | mysql -u root guacamole_db
+    
+    cat > /etc/guacamole/guacamole.properties << PROPEOF
+guacd-hostname: localhost
+guacd-port: 4822
+mysql-hostname: 127.0.0.1
+mysql-port: 3306
+mysql-database: guacamole_db
+mysql-username: guacamole_user
+mysql-password: $GUAC_DB_PASS
+PROPEOF
+    
+    echo "GUACAMOLE_HOME=/etc/guacamole" >> /etc/default/tomcat9
+    
+    systemctl restart tomcat9 guacd
+    
+    echo -e "${GREEN}Guacamole installed! Access at /guac (default: guacadmin/guacadmin)${NC}"
+    rm -rf /tmp/guac_build /tmp/mysql-connector* /tmp/guacamole-auth-jdbc*
+}
+
+install_guacamole_rocky() {
+    echo -e "${BLUE}Installing Guacamole dependencies for Rocky/RHEL...${NC}"
+    
+    dnf install -y cairo-devel libjpeg-turbo-devel libpng-devel \
+        libtool uuid-devel ffmpeg-devel freerdp-devel pango-devel \
+        libssh2-devel libvncserver-devel openssl-devel libvorbis-devel \
+        libwebp-devel pulseaudio-libs-devel libwebsockets-devel \
+        java-11-openjdk mariadb-server
+    
+    dnf install -y tomcat
+    
+    echo -e "${BLUE}Building guacamole-server 1.5.5...${NC}"
+    GUAC_VER="1.5.5"
+    mkdir -p /tmp/guac_build && cd /tmp/guac_build
+    
+    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/source/guacamole-server-$GUAC_VER.tar.gz
+    tar xzf guacamole-server-$GUAC_VER.tar.gz
+    cd guacamole-server-$GUAC_VER
+    
+    ./configure --with-init-dir=/etc/init.d
+    make -j$(nproc)
+    make install
+    ldconfig
+    
+    cat > /etc/systemd/system/guacd.service << 'GUACDEOF'
+[Unit]
+Description=Guacamole Server
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/local/sbin/guacd
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+GUACDEOF
+
+    systemctl daemon-reload
+    systemctl enable --now guacd
+    
+    echo -e "${BLUE}Setting up Guacamole web application...${NC}"
+    mkdir -p /etc/guacamole/{extensions,lib}
+    
+    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/binary/guacamole-$GUAC_VER.war \
+        -O /var/lib/tomcat/webapps/guacamole.war
+    
+    wget -q https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-j-8.0.33.tar.gz \
+        -O /tmp/mysql-connector.tar.gz
+    tar xzf /tmp/mysql-connector.tar.gz -C /tmp
+    cp /tmp/mysql-connector-j-8.0.33/mysql-connector-j-8.0.33.jar /etc/guacamole/lib/
+    
+    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/binary/guacamole-auth-jdbc-$GUAC_VER.tar.gz \
+        -O /tmp/guacamole-auth-jdbc.tar.gz
+    tar xzf /tmp/guacamole-auth-jdbc.tar.gz -C /tmp
+    cp /tmp/guacamole-auth-jdbc-$GUAC_VER/mysql/guacamole-auth-jdbc-mysql-$GUAC_VER.jar /etc/guacamole/extensions/
+    
+    echo -e "${BLUE}Configuring MariaDB for Guacamole...${NC}"
+    systemctl enable --now mariadb
+    
+    GUAC_DB_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 20)
+    
+    mysql -u root << SQLEOF
+CREATE DATABASE IF NOT EXISTS guacamole_db;
+CREATE USER IF NOT EXISTS 'guacamole_user'@'localhost' IDENTIFIED BY '$GUAC_DB_PASS';
+GRANT SELECT,INSERT,UPDATE,DELETE ON guacamole_db.* TO 'guacamole_user'@'localhost';
+FLUSH PRIVILEGES;
+SQLEOF
+    
+    cat /tmp/guacamole-auth-jdbc-$GUAC_VER/mysql/schema/*.sql | mysql -u root guacamole_db
+    
+    cat > /etc/guacamole/guacamole.properties << PROPEOF
+guacd-hostname: localhost
+guacd-port: 4822
+mysql-hostname: 127.0.0.1
+mysql-port: 3306
+mysql-database: guacamole_db
+mysql-username: guacamole_user
+mysql-password: $GUAC_DB_PASS
+PROPEOF
+    
+    echo "GUACAMOLE_HOME=/etc/guacamole" >> /etc/sysconfig/tomcat
+    
+    systemctl restart tomcat guacd
+    
+    echo -e "${GREEN}Guacamole installed! Access at /guac (default: guacadmin/guacadmin)${NC}"
+    rm -rf /tmp/guac_build /tmp/mysql-connector* /tmp/guacamole-auth-jdbc*
 }
 
 clone_repo() {
@@ -785,6 +999,12 @@ OPENAI_API_KEY=$OPENAI_KEY
 PORT=$APP_PORT
 EOF
 
+    if [ -n "$ANTHROPIC_KEY" ]; then
+        cat >> .env << EOF
+ANTHROPIC_API_KEY=$ANTHROPIC_KEY
+EOF
+    fi
+
     if [ -n "$AUTH_USER" ]; then
         cat >> .env << EOF
 AUTH_USER=$AUTH_USER
@@ -796,7 +1016,36 @@ EOF
 }
 
 configure_debian_nginx() {
-    cat > /etc/nginx/sites-available/saic << EOF
+    if [ "$INSTALL_GUACAMOLE" = true ]; then
+        cat > /etc/nginx/sites-available/saic << EOF
+server {
+    listen 80;
+    server_name _;
+    
+    location / {
+        proxy_pass http://127.0.0.1:$APP_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_cache_bypass \$http_upgrade;
+    }
+    
+    location /guacamole/ {
+        proxy_pass http://127.0.0.1:8080/guacamole/;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$http_connection;
+        proxy_cookie_path /guacamole/ /guacamole/;
+        access_log off;
+    }
+}
+EOF
+    else
+        cat > /etc/nginx/sites-available/saic << EOF
 server {
     listen 80;
     server_name _;
@@ -811,6 +1060,7 @@ server {
     }
 }
 EOF
+    fi
     ln -sf /etc/nginx/sites-available/saic /etc/nginx/sites-enabled/
     rm -f /etc/nginx/sites-enabled/default
     nginx -t && systemctl reload nginx
@@ -823,7 +1073,36 @@ EOF
 configure_rocky_nginx() {
     setsebool -P httpd_can_network_connect 1
     
-    cat > /etc/nginx/conf.d/saic.conf << EOF
+    if [ "$INSTALL_GUACAMOLE" = true ]; then
+        cat > /etc/nginx/conf.d/saic.conf << EOF
+server {
+    listen 80;
+    server_name _;
+    
+    location / {
+        proxy_pass http://127.0.0.1:$APP_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_cache_bypass \$http_upgrade;
+    }
+    
+    location /guacamole/ {
+        proxy_pass http://127.0.0.1:8080/guacamole/;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$http_connection;
+        proxy_cookie_path /guacamole/ /guacamole/;
+        access_log off;
+    }
+}
+EOF
+    else
+        cat > /etc/nginx/conf.d/saic.conf << EOF
 server {
     listen 80;
     server_name _;
@@ -838,6 +1117,7 @@ server {
     }
 }
 EOF
+    fi
     systemctl enable nginx
     systemctl start nginx
     nginx -t && systemctl reload nginx
@@ -864,6 +1144,7 @@ module.exports = {
     env: {
       NODE_ENV: 'production',
       OPENAI_API_KEY: '${OPENAI_KEY}',
+      ANTHROPIC_API_KEY: '${ANTHROPIC_KEY:-}',
       PORT: '${APP_PORT}',
       AUTH_USER: '${AUTH_USER:-}',
       AUTH_PASS: '${AUTH_PASS:-}'
@@ -893,6 +1174,17 @@ else
 fi
 
 install_pm2
+
+# Install Guacamole if option 3 selected
+if [ "$INSTALL_GUACAMOLE" = true ]; then
+    echo ""
+    echo -e "${BLUE}Installing Guacamole Remote Desktop...${NC}"
+    if [ "$DETECTED_OS" == "debian" ]; then
+        install_guacamole_debian
+    else
+        install_guacamole_rocky
+    fi
+fi
 
 # Clone or create embedded
 if [ "$INSTALL_METHOD" == "1" ]; then
@@ -960,6 +1252,17 @@ echo -e "  ${YELLOW}pm2 monit${NC}           - Real-time monitoring"
 echo -e "  ${YELLOW}saic-passwd${NC}         - Change/reset password protection"
 echo -e "  ${YELLOW}saic-ssl${NC}            - Setup SSL certificate"
 echo ""
+
+if [ "$INSTALL_GUACAMOLE" = true ]; then
+    echo -e "${CYAN}=== Guacamole Remote Desktop ===${NC}"
+    echo -e "  URL:          ${GREEN}http://$SERVER_IP/guacamole/${NC}"
+    echo -e "  Username:     ${GREEN}guacadmin${NC}"
+    echo -e "  Password:     ${GREEN}guacadmin${NC} (change immediately!)"
+    echo ""
+    echo -e "${CYAN}=== Claude AI Assistant ===${NC}"
+    echo -e "  URL:          ${GREEN}http://$SERVER_IP/assistant/${NC}"
+    echo ""
+fi
 
 # Create SSL setup script for later use
 cat > /usr/local/bin/saic-ssl << 'SSLEOF'

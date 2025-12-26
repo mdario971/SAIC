@@ -6,19 +6,28 @@ A mobile-optimized web application that combines Strudel (a live coding music en
 
 ## Current State
 
-- **Frontend**: Complete with two pages (Simple Mode and DJ Mode)
-- **Backend**: AI code generation endpoint using OpenAI
-- **Audio**: Web Audio API integration for pattern playback
-- **Deployment**: Debian 13 VPS deployment scripts included
+- **Frontend**: Complete with four pages (Simple Mode, DJ Mode, Pro Mode, and Assistant)
+- **Backend**: AI code generation endpoints using OpenAI and Claude (Anthropic)
+- **Audio**: Web Audio API integration with synthesized drum samples
+- **Deployment**: Universal installer for Debian/Ubuntu, Rocky/RHEL/AlmaLinux/CentOS
 
 ## Key Features
 
 1. **Simple Mode** (`/`): Single code editor with prompt input, quick-insert toolbar, and tutorial panel
 2. **DJ Mode** (`/dj`): Dual editors for preview/master channels with crossfader control
-3. **AI Code Generation**: Natural language to Strudel code using OpenAI GPT-5
-4. **Quick Insert Patterns**: Pre-built common Strudel patterns (beats, bass, synth, effects)
-5. **Interactive Tutorial**: Built-in Strudel basics guide with playable examples
-6. **Mobile-First Design**: Optimized for Android browsers with touch-friendly controls
+3. **Pro Mode** (`/pro`): Embedded strudel.cc REPL with AI assistant and music theory tools
+4. **Server Assistant** (`/assistant`): Claude AI-powered server management chat interface
+5. **AI Code Generation**: Natural language to Strudel code using OpenAI GPT-5
+6. **Quick Insert Patterns**: Pre-built common Strudel patterns (beats, bass, synth, effects)
+7. **Interactive Tutorial**: Built-in Strudel basics guide with playable examples
+8. **Mobile-First Design**: Optimized for Android browsers with touch-friendly controls
+
+## Installation Options
+
+The universal installer (`deploy/install.sh`) supports three options:
+1. **SAIC Classic** - Main branch with Simple and DJ modes
+2. **SAIC Pro** - Pro branch with embedded strudel.cc REPL
+3. **Guacamole + Claude AI** - Remote desktop with AI server assistant
 
 ## Project Architecture
 
@@ -41,7 +50,9 @@ A mobile-optimized web application that combines Strudel (a live coding music en
 │   │   │   └── queryClient.ts
 │   │   ├── pages/
 │   │   │   ├── SimplePage.tsx     # Main single-editor mode
-│   │   │   └── DJPage.tsx         # Dual-output DJ mode
+│   │   │   ├── DJPage.tsx         # Dual-output DJ mode
+│   │   │   ├── ProModePage.tsx    # Embedded strudel.cc REPL
+│   │   │   └── AssistantPage.tsx  # Claude AI server assistant
 │   │   └── App.tsx
 │   └── index.html
 ├── server/                    # Express backend
@@ -61,6 +72,7 @@ A mobile-optimized web application that combines Strudel (a live coding music en
 ## API Endpoints
 
 - `POST /api/generate` - Convert natural language to Strudel code
+- `POST /api/claude` - Claude AI server assistant (requires ANTHROPIC_API_KEY)
 - `GET /api/snippets` - List saved code snippets
 - `POST /api/snippets` - Save a new code snippet
 
@@ -75,6 +87,7 @@ A mobile-optimized web application that combines Strudel (a live coding music en
 ## Environment Variables
 
 - `OPENAI_API_KEY` - Required for AI code generation
+- `ANTHROPIC_API_KEY` - Optional, enables Claude AI server assistant
 
 ## Development
 
