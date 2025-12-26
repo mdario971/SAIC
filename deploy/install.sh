@@ -91,6 +91,7 @@ echo -e "${CYAN}=== Checking for Existing Installation ===${NC}"
 echo ""
 
 FOUND_EXISTING=false
+FOUND_GUACAMOLE=false
 EXISTING_ITEMS=""
 
 # Check for SAIC directory
@@ -101,7 +102,7 @@ fi
 
 # Check for PM2 process
 if command -v pm2 &> /dev/null; then
-    if pm2 list 2>/dev/null | grep -q "saic"; then
+    if pm2 list 2>/dev/null | grep -qE "saic|saic-pro"; then
         FOUND_EXISTING=true
         EXISTING_ITEMS="${EXISTING_ITEMS}\n  - PM2 process 'saic'"
     fi
@@ -119,77 +120,214 @@ if [ -f "/usr/local/bin/saic-ssl" ]; then
     EXISTING_ITEMS="${EXISTING_ITEMS}\n  - /usr/local/bin/saic-ssl"
 fi
 
+# Check for password helper script
+if [ -f "/usr/local/bin/saic-passwd" ]; then
+    FOUND_EXISTING=true
+    EXISTING_ITEMS="${EXISTING_ITEMS}\n  - /usr/local/bin/saic-passwd"
+fi
+
+# Check for Guacamole components
+if systemctl list-unit-files 2>/dev/null | grep -q "guacd"; then
+    FOUND_EXISTING=true
+    FOUND_GUACAMOLE=true
+    EXISTING_ITEMS="${EXISTING_ITEMS}\n  - guacd service (Guacamole daemon)"
+fi
+
+if [ -d "/etc/guacamole" ]; then
+    FOUND_EXISTING=true
+    FOUND_GUACAMOLE=true
+    EXISTING_ITEMS="${EXISTING_ITEMS}\n  - /etc/guacamole (Guacamole config)"
+fi
+
+if [ -f "/var/lib/tomcat9/webapps/guacamole.war" ] || [ -f "/usr/share/tomcat/webapps/guacamole.war" ]; then
+    FOUND_EXISTING=true
+    FOUND_GUACAMOLE=true
+    EXISTING_ITEMS="${EXISTING_ITEMS}\n  - Guacamole WAR (Tomcat webapp)"
+fi
+
+# Check for Guacamole database
+if command -v mysql &> /dev/null; then
+    if mysql -u root -e "SHOW DATABASES;" 2>/dev/null | grep -q "guacamole_db"; then
+        FOUND_EXISTING=true
+        FOUND_GUACAMOLE=true
+        EXISTING_ITEMS="${EXISTING_ITEMS}\n  - guacamole_db (MariaDB database)"
+    fi
+fi
+
+# Check for port conflicts
+PORT_CONFLICTS=""
+check_port() {
+    local port=$1
+    local desc=$2
+    if ss -tlnp 2>/dev/null | grep -q ":${port} " || netstat -tlnp 2>/dev/null | grep -q ":${port} "; then
+        PORT_CONFLICTS="${PORT_CONFLICTS}\n  - Port ${port} (${desc})"
+    fi
+}
+
+check_port 5000 "SAIC app"
+check_port 8080 "Tomcat/Guacamole"
+check_port 4822 "guacd daemon"
+
+if [ -n "$PORT_CONFLICTS" ]; then
+    FOUND_EXISTING=true
+    EXISTING_ITEMS="${EXISTING_ITEMS}\n${YELLOW}Port conflicts detected:${NC}${PORT_CONFLICTS}"
+fi
+
+# Cleanup function for thorough removal
+cleanup_installation() {
+    local clean_guacamole=$1
+    
+    echo ""
+    echo -e "${BLUE}Cleaning existing installation...${NC}"
+    
+    # Stop and delete PM2 processes
+    if command -v pm2 &> /dev/null; then
+        pm2 stop saic 2>/dev/null || true
+        pm2 stop saic-pro 2>/dev/null || true
+        pm2 delete saic 2>/dev/null || true
+        pm2 delete saic-pro 2>/dev/null || true
+        pm2 save 2>/dev/null || true
+        echo -e "  ${GREEN}✓${NC} Stopped PM2 processes"
+    fi
+    
+    # Remove app directory
+    if [ -d "/opt/SAIC" ]; then
+        rm -rf /opt/SAIC
+        echo -e "  ${GREEN}✓${NC} Removed /opt/SAIC"
+    fi
+    
+    # Remove nginx configs
+    if [ -f "/etc/nginx/sites-available/saic" ]; then
+        rm -f /etc/nginx/sites-available/saic
+        rm -f /etc/nginx/sites-enabled/saic
+        echo -e "  ${GREEN}✓${NC} Removed Nginx config (Debian)"
+    fi
+    if [ -f "/etc/nginx/conf.d/saic.conf" ]; then
+        rm -f /etc/nginx/conf.d/saic.conf
+        echo -e "  ${GREEN}✓${NC} Removed Nginx config (Rocky)"
+    fi
+    
+    # Remove helper scripts
+    rm -f /usr/local/bin/saic-ssl 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-ssl command"
+    rm -f /usr/local/bin/saic-passwd 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-passwd command"
+    
+    # Clean Guacamole if requested
+    if [ "$clean_guacamole" = true ]; then
+        echo -e "${BLUE}Cleaning Guacamole components...${NC}"
+        
+        # Stop services
+        systemctl stop guacd 2>/dev/null || true
+        systemctl stop tomcat9 2>/dev/null || true
+        systemctl stop tomcat 2>/dev/null || true
+        systemctl disable guacd 2>/dev/null || true
+        
+        # Remove guacd service file
+        rm -f /etc/systemd/system/guacd.service
+        systemctl daemon-reload 2>/dev/null || true
+        echo -e "  ${GREEN}✓${NC} Stopped and removed guacd service"
+        
+        # Remove Guacamole config and WAR
+        rm -rf /etc/guacamole
+        rm -f /var/lib/tomcat9/webapps/guacamole.war 2>/dev/null
+        rm -rf /var/lib/tomcat9/webapps/guacamole 2>/dev/null
+        rm -f /usr/share/tomcat/webapps/guacamole.war 2>/dev/null
+        rm -rf /usr/share/tomcat/webapps/guacamole 2>/dev/null
+        echo -e "  ${GREEN}✓${NC} Removed Guacamole config and webapp"
+        
+        # Drop Guacamole database
+        if command -v mysql &> /dev/null; then
+            mysql -u root -e "DROP DATABASE IF EXISTS guacamole_db; DROP USER IF EXISTS 'guacamole_user'@'localhost';" 2>/dev/null || true
+            echo -e "  ${GREEN}✓${NC} Dropped guacamole_db database"
+        fi
+        
+        # Remove compiled guacd binaries
+        rm -f /usr/local/sbin/guacd 2>/dev/null
+        rm -rf /usr/local/lib/libguac* 2>/dev/null
+        ldconfig 2>/dev/null || true
+        echo -e "  ${GREEN}✓${NC} Removed guacd binaries"
+    fi
+    
+    # Kill processes on conflicting ports (use fuser or lsof, whichever is available)
+    for port in 5000 8080 4822; do
+        local killed=false
+        if command -v fuser &> /dev/null; then
+            fuser -k $port/tcp 2>/dev/null && killed=true
+        elif command -v lsof &> /dev/null; then
+            local pid=$(lsof -ti:$port 2>/dev/null || echo "")
+            if [ -n "$pid" ]; then
+                kill $pid 2>/dev/null && killed=true
+            fi
+        elif command -v ss &> /dev/null; then
+            # ss can show PIDs but requires parsing
+            local pid=$(ss -tlnp 2>/dev/null | grep ":$port " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)
+            if [ -n "$pid" ]; then
+                kill $pid 2>/dev/null && killed=true
+            fi
+        fi
+        if [ "$killed" = true ]; then
+            echo -e "  ${GREEN}✓${NC} Killed process on port $port"
+        fi
+    done
+    
+    # Reload nginx if running
+    if systemctl is-active --quiet nginx; then
+        nginx -t 2>/dev/null && systemctl reload nginx
+        echo -e "  ${GREEN}✓${NC} Reloaded Nginx"
+    fi
+    
+    echo -e "${GREEN}Cleanup complete!${NC}"
+}
+
 if [ "$FOUND_EXISTING" = true ]; then
-    echo -e "${YELLOW}Existing SAIC installation detected:${NC}"
+    echo -e "${YELLOW}Existing installation detected:${NC}"
     echo -e "$EXISTING_ITEMS"
     echo ""
-    read -p "Remove existing installation before continuing? (Y/n): " CLEAN_EXISTING </dev/tty
+    echo -e "${CYAN}What would you like to do?${NC}"
+    echo -e "  ${CYAN}1)${NC} Clean reinstall - Remove everything and start fresh"
+    echo -e "  ${CYAN}2)${NC} Upgrade in-place - Keep configs, update code only"
+    echo -e "  ${CYAN}3)${NC} Abort - Exit without changes"
+    echo ""
+    read -p "Enter choice (1, 2, or 3) [1]: " CLEANUP_CHOICE </dev/tty
+    CLEANUP_CHOICE=${CLEANUP_CHOICE:-1}
     
-    if [[ ! "$CLEAN_EXISTING" =~ ^[Nn]$ ]]; then
-        echo ""
-        echo -e "${BLUE}Cleaning existing installation...${NC}"
-        
-        # Stop and delete PM2 process
-        if command -v pm2 &> /dev/null; then
-            pm2 stop saic 2>/dev/null || true
-            pm2 delete saic 2>/dev/null || true
-            pm2 save 2>/dev/null || true
-        fi
-        
-        # Remove app directory
-        if [ -d "/opt/SAIC" ]; then
-            rm -rf /opt/SAIC
-            echo -e "  Removed /opt/SAIC"
-        fi
-        
-        # Remove nginx configs
-        if [ -f "/etc/nginx/sites-available/saic" ]; then
-            rm -f /etc/nginx/sites-available/saic
-            rm -f /etc/nginx/sites-enabled/saic
-            echo -e "  Removed Nginx config (Debian)"
-        fi
-        if [ -f "/etc/nginx/conf.d/saic.conf" ]; then
-            rm -f /etc/nginx/conf.d/saic.conf
-            echo -e "  Removed Nginx config (Rocky)"
-        fi
-        
-        # Remove SSL helper
-        if [ -f "/usr/local/bin/saic-ssl" ]; then
-            rm -f /usr/local/bin/saic-ssl
-            echo -e "  Removed saic-ssl command"
-        fi
-        
-        # Reload nginx if running
-        if systemctl is-active --quiet nginx; then
-            nginx -t 2>/dev/null && systemctl reload nginx
-        fi
-        
-        echo -e "${GREEN}Cleanup complete!${NC}"
-    else
-        echo -e "${YELLOW}Keeping existing installation. Will overwrite files.${NC}"
-    fi
+    case $CLEANUP_CHOICE in
+        1)
+            if [ "$FOUND_GUACAMOLE" = true ]; then
+                echo ""
+                read -p "Also remove Guacamole and its database? (Y/n): " CLEAN_GUAC </dev/tty
+                if [[ ! "$CLEAN_GUAC" =~ ^[Nn]$ ]]; then
+                    cleanup_installation true
+                else
+                    cleanup_installation false
+                fi
+            else
+                cleanup_installation false
+            fi
+            ;;
+        2)
+            echo -e "${YELLOW}Upgrade mode: Will overwrite application files only.${NC}"
+            # Just stop PM2, don't remove anything
+            if command -v pm2 &> /dev/null; then
+                pm2 stop saic 2>/dev/null || true
+                pm2 stop saic-pro 2>/dev/null || true
+            fi
+            ;;
+        3)
+            echo -e "${RED}Installation aborted.${NC}"
+            exit 0
+            ;;
+        *)
+            echo -e "${YELLOW}Invalid choice, proceeding with clean reinstall.${NC}"
+            cleanup_installation false
+            ;;
+    esac
 else
     echo -e "${GREEN}No existing installation detected.${NC}"
     echo ""
     read -p "Check and clean any leftover files anyway? (y/N): " CLEAN_ANYWAY </dev/tty
     
     if [[ "$CLEAN_ANYWAY" =~ ^[Yy]$ ]]; then
-        echo -e "${BLUE}Checking for leftover files...${NC}"
-        
-        # Stop and delete PM2 process if exists
-        if command -v pm2 &> /dev/null; then
-            pm2 stop saic 2>/dev/null || true
-            pm2 delete saic 2>/dev/null || true
-        fi
-        
-        # Remove potential leftovers
-        rm -rf /opt/SAIC 2>/dev/null || true
-        rm -f /etc/nginx/sites-available/saic 2>/dev/null || true
-        rm -f /etc/nginx/sites-enabled/saic 2>/dev/null || true
-        rm -f /etc/nginx/conf.d/saic.conf 2>/dev/null || true
-        rm -f /usr/local/bin/saic-ssl 2>/dev/null || true
-        
-        echo -e "${GREEN}Cleanup complete!${NC}"
+        cleanup_installation false
     fi
 fi
 
