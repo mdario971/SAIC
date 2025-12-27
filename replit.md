@@ -6,19 +6,89 @@ A mobile-optimized web application that combines Strudel (a live coding music en
 
 ## Current State
 
-- **Frontend**: Complete with two pages (Simple Mode and DJ Mode)
-- **Backend**: AI code generation endpoint using OpenAI
-- **Audio**: Web Audio API integration for pattern playback
-- **Deployment**: Debian 13 VPS deployment scripts included
+- **Frontend**: Complete with four pages (Simple Mode, DJ Mode, Pro Mode, and Assistant)
+- **Backend**: AI code generation endpoints using OpenAI and Claude (Anthropic)
+- **Audio**: Web Audio API integration with synthesized drum samples
+- **Deployment**: Universal installer for Debian/Ubuntu, Rocky/RHEL/AlmaLinux/CentOS
 
 ## Key Features
 
 1. **Simple Mode** (`/`): Single code editor with prompt input, quick-insert toolbar, and tutorial panel
 2. **DJ Mode** (`/dj`): Dual editors for preview/master channels with crossfader control
-3. **AI Code Generation**: Natural language to Strudel code using OpenAI GPT-5
-4. **Quick Insert Patterns**: Pre-built common Strudel patterns (beats, bass, synth, effects)
-5. **Interactive Tutorial**: Built-in Strudel basics guide with playable examples
-6. **Mobile-First Design**: Optimized for Android browsers with touch-friendly controls
+3. **Pro Mode** (`/pro`): Embedded strudel.cc REPL with AI assistant and music theory tools
+4. **Server Assistant** (`/assistant`): Claude AI-powered server management chat interface
+5. **AI Code Generation**: Natural language to Strudel code using OpenAI GPT-5
+6. **Quick Insert Patterns**: Pre-built common Strudel patterns (beats, bass, synth, effects)
+7. **Interactive Tutorial**: Built-in Strudel basics guide with playable examples
+8. **Mobile-First Design**: Optimized for Android browsers with touch-friendly controls
+
+## Installation Options
+
+The universal installer (`deploy/install.sh`) supports three options:
+
+| Option | Description | API Key | Stack |
+|--------|-------------|---------|-------|
+| 1. SAIC Classic | Simple editor + DJ mode | OpenAI required | Node.js, PM2 |
+| 2. SAIC Pro | Embedded strudel.cc REPL | OpenAI required | Node.js, PM2 |
+| 3. Remote + AI | Guacamole + Strudel MCP | **FREE (no API keys)** | Tomcat, MariaDB, MCP |
+
+### Option 3: Strudel MCP Server Integration
+
+Option 3 uses the **Model Context Protocol (MCP)** - an open standard by Anthropic that enables AI tools without API keys:
+
+- **Guacamole**: Remote desktop access via web browser
+- **Strudel MCP Server**: Runs headless on VPS with xvfb + Playwright
+- **No API costs**: MCP runs locally via stdio protocol
+
+**How it works:**
+
+*Option A: Direct Browser Access (Recommended)*
+1. Open https://strudel.cc in any browser
+2. Start live coding music immediately
+
+*Option B: AI-Assisted with Claude Desktop*
+1. Install Claude Desktop on your Mac/Windows machine
+2. Add MCP config to Claude Desktop (see strudel-start for details)
+3. Ask Claude: "Initialize Strudel and create a techno beat"
+4. MCP server runs locally on your machine, not over network
+
+### Pre-Installation Cleanup
+
+The installer automatically detects and handles existing/failed installations:
+
+**Detection checks:**
+- `/opt/SAIC` directory
+- PM2 processes (saic, saic-pro)
+- Nginx configurations
+- Guacamole components (guacd, /etc/guacamole, WAR files)
+- MariaDB guacamole_db database
+- Port conflicts (5000, 8080, 4822)
+- Helper scripts (saic-ssl, saic-passwd, saic-status, saic-logs, saic-stats, saic-security, strudel-start)
+
+**User options when existing installation found:**
+1. **Clean reinstall** - Remove everything and start fresh
+2. **Upgrade in-place** - Keep configs, update code only
+3. **Abort** - Exit without changes
+
+Guacamole cleanup is handled separately with confirmation prompt.
+
+### Security Features
+
+The installer automatically configures:
+- **UFW/firewalld**: Firewall with only necessary ports open (22, 80, 443)
+- **fail2ban**: Brute-force protection for SSH and Nginx
+- **htop**: Interactive system monitoring
+
+### Helper Commands
+
+After installation, these commands are available:
+- `saic-status` - Check app, nginx, fail2ban, PM2 status
+- `saic-logs` - Interactive log viewer (PM2, Nginx, fail2ban, auth)
+- `saic-stats` - CPU, memory, disk, network overview
+- `saic-security` - Firewall status, banned IPs, failed logins
+- `saic-passwd` - Change/reset password protection
+- `saic-ssl` - Setup Let's Encrypt SSL certificate
+- `strudel-start` - Launch Strudel.cc browser (Option 3 only)
 
 ## Project Architecture
 
@@ -41,7 +111,9 @@ A mobile-optimized web application that combines Strudel (a live coding music en
 │   │   │   └── queryClient.ts
 │   │   ├── pages/
 │   │   │   ├── SimplePage.tsx     # Main single-editor mode
-│   │   │   └── DJPage.tsx         # Dual-output DJ mode
+│   │   │   ├── DJPage.tsx         # Dual-output DJ mode
+│   │   │   ├── ProModePage.tsx    # Embedded strudel.cc REPL
+│   │   │   └── AssistantPage.tsx  # Claude AI server assistant
 │   │   └── App.tsx
 │   └── index.html
 ├── server/                    # Express backend
@@ -61,6 +133,7 @@ A mobile-optimized web application that combines Strudel (a live coding music en
 ## API Endpoints
 
 - `POST /api/generate` - Convert natural language to Strudel code
+- `POST /api/claude` - Claude AI server assistant (requires ANTHROPIC_API_KEY)
 - `GET /api/snippets` - List saved code snippets
 - `POST /api/snippets` - Save a new code snippet
 
@@ -75,6 +148,7 @@ A mobile-optimized web application that combines Strudel (a live coding music en
 ## Environment Variables
 
 - `OPENAI_API_KEY` - Required for AI code generation
+- `ANTHROPIC_API_KEY` - Optional, enables Claude AI server assistant
 
 ## Development
 
