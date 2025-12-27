@@ -234,6 +234,10 @@ cleanup_installation() {
     # Remove helper scripts
     rm -f /usr/local/bin/saic-ssl 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-ssl command"
     rm -f /usr/local/bin/saic-passwd 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-passwd command"
+    rm -f /usr/local/bin/saic-status 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-status command"
+    rm -f /usr/local/bin/saic-logs 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-logs command"
+    rm -f /usr/local/bin/saic-stats 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-stats command"
+    rm -f /usr/local/bin/saic-security 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-security command"
     
     # Clean Guacamole if requested
     if [ "$clean_guacamole" = true ]; then
@@ -537,7 +541,7 @@ install_debian_deps() {
     apt update && apt upgrade -y
     
     echo -e "${BLUE}[2/8] Installing dependencies...${NC}"
-    apt install -y curl git nginx ufw build-essential chromium xvfb
+    apt install -y curl git nginx ufw fail2ban build-essential chromium xvfb htop
     
     echo -e "${BLUE}[3/8] Installing Node.js 20...${NC}"
     if ! command -v node &> /dev/null; then
@@ -551,7 +555,8 @@ install_rocky_deps() {
     dnf update -y
     
     echo -e "${BLUE}[2/8] Installing dependencies...${NC}"
-    dnf install -y curl git nginx firewalld epel-release chromium xorg-x11-server-Xvfb
+    dnf install -y curl git nginx firewalld epel-release chromium xorg-x11-server-Xvfb htop
+    dnf install -y fail2ban fail2ban-firewalld
     
     echo -e "${BLUE}[3/8] Installing Node.js 20...${NC}"
     if ! command -v node &> /dev/null; then
@@ -563,6 +568,90 @@ install_rocky_deps() {
 install_pm2() {
     echo -e "${BLUE}[4/8] Installing PM2...${NC}"
     npm install -g pm2
+}
+
+configure_fail2ban() {
+    echo -e "${BLUE}Configuring fail2ban for SSH and Nginx protection...${NC}"
+    
+    # Check which filters are available
+    FILTER_DIR="/etc/fail2ban/filter.d"
+    HAS_NGINX_HTTP_AUTH=false
+    HAS_NGINX_LIMIT_REQ=false
+    HAS_NGINX_BOTSEARCH=false
+    
+    [ -f "$FILTER_DIR/nginx-http-auth.conf" ] && HAS_NGINX_HTTP_AUTH=true
+    [ -f "$FILTER_DIR/nginx-limit-req.conf" ] && HAS_NGINX_LIMIT_REQ=true
+    [ -f "$FILTER_DIR/nginx-botsearch.conf" ] && HAS_NGINX_BOTSEARCH=true
+    
+    # Determine auth log path
+    AUTH_LOG="/var/log/auth.log"
+    [ -f /etc/redhat-release ] && AUTH_LOG="/var/log/secure"
+    
+    # Create base jail configuration (SSH always works)
+    cat > /etc/fail2ban/jail.local << JAILEOF
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = $AUTH_LOG
+maxretry = 3
+bantime = 86400
+JAILEOF
+
+    # Add nginx jails only if their filters exist
+    if [ "$HAS_NGINX_HTTP_AUTH" = true ]; then
+        cat >> /etc/fail2ban/jail.local << 'JAILEOF'
+
+[nginx-http-auth]
+enabled = true
+filter = nginx-http-auth
+logpath = /var/log/nginx/error.log
+maxretry = 5
+bantime = 3600
+JAILEOF
+        echo -e "  ${GREEN}[OK]${NC} nginx-http-auth jail enabled"
+    fi
+    
+    if [ "$HAS_NGINX_LIMIT_REQ" = true ]; then
+        cat >> /etc/fail2ban/jail.local << 'JAILEOF'
+
+[nginx-limit-req]
+enabled = true
+filter = nginx-limit-req
+logpath = /var/log/nginx/error.log
+maxretry = 10
+bantime = 7200
+JAILEOF
+        echo -e "  ${GREEN}[OK]${NC} nginx-limit-req jail enabled"
+    fi
+    
+    if [ "$HAS_NGINX_BOTSEARCH" = true ]; then
+        cat >> /etc/fail2ban/jail.local << 'JAILEOF'
+
+[nginx-botsearch]
+enabled = true
+filter = nginx-botsearch
+logpath = /var/log/nginx/access.log
+maxretry = 2
+bantime = 86400
+JAILEOF
+        echo -e "  ${GREEN}[OK]${NC} nginx-botsearch jail enabled"
+    fi
+    
+    # Enable and start fail2ban (with error handling)
+    systemctl enable fail2ban 2>/dev/null || true
+    if systemctl restart fail2ban 2>/dev/null; then
+        echo -e "  ${GREEN}[OK]${NC} fail2ban started successfully"
+    else
+        echo -e "  ${YELLOW}[WARN]${NC} fail2ban restart had issues, checking status..."
+        systemctl status fail2ban --no-pager 2>/dev/null || true
+    fi
 }
 
 # =============================================
@@ -1379,6 +1468,9 @@ else
     configure_rocky_nginx
 fi
 
+# Configure fail2ban security
+configure_fail2ban
+
 start_pm2
 
 # Get IP and domain
@@ -1420,13 +1512,17 @@ if [ -n "$AUTH_USER" ]; then
 fi
 
 echo -e "${CYAN}=== Useful Commands ===${NC}"
-echo -e "  ${YELLOW}pm2 logs saic${NC}       - View application logs"
-echo -e "  ${YELLOW}pm2 restart saic${NC}    - Restart application"
-echo -e "  ${YELLOW}pm2 stop saic${NC}       - Stop application"
-echo -e "  ${YELLOW}pm2 status${NC}          - Check all processes"
-echo -e "  ${YELLOW}pm2 monit${NC}           - Real-time monitoring"
+echo -e "  ${YELLOW}saic-status${NC}         - Check app, nginx, services status"
+echo -e "  ${YELLOW}saic-logs${NC}           - View live application logs"
+echo -e "  ${YELLOW}saic-stats${NC}          - CPU, memory, disk usage overview"
+echo -e "  ${YELLOW}saic-security${NC}       - Firewall status, banned IPs, failed logins"
 echo -e "  ${YELLOW}saic-passwd${NC}         - Change/reset password protection"
 echo -e "  ${YELLOW}saic-ssl${NC}            - Setup SSL certificate"
+echo ""
+echo -e "${CYAN}=== PM2 Commands ===${NC}"
+echo -e "  ${YELLOW}pm2 logs saic${NC}       - View raw application logs"
+echo -e "  ${YELLOW}pm2 restart saic${NC}    - Restart application"
+echo -e "  ${YELLOW}pm2 monit${NC}           - Real-time monitoring dashboard"
 echo ""
 
 if [ "$INSTALL_GUACAMOLE" = true ]; then
@@ -1591,6 +1687,297 @@ case $CHOICE in
 esac
 PWEOF
 chmod +x /usr/local/bin/saic-passwd
+
+# Create saic-status helper script
+cat > /usr/local/bin/saic-status << 'STATUSEOF'
+#!/bin/bash
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║                    SAIC STATUS CHECK                       ║${NC}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# System Info
+echo -e "${CYAN}=== System Info ===${NC}"
+echo -e "  Hostname:     $(hostname)"
+echo -e "  IP Address:   $(hostname -I | awk '{print $1}')"
+echo -e "  Uptime:       $(uptime -p 2>/dev/null || uptime)"
+echo ""
+
+# Services Status
+echo -e "${CYAN}=== Services Status ===${NC}"
+check_service() {
+    local name=$1
+    local service=$2
+    if systemctl is-active --quiet $service 2>/dev/null; then
+        echo -e "  $name: ${GREEN}[RUNNING]${NC}"
+    else
+        echo -e "  $name: ${RED}[STOPPED]${NC}"
+    fi
+}
+
+check_service "Nginx" "nginx"
+check_service "fail2ban" "fail2ban"
+
+# Check for Guacamole services
+if systemctl list-unit-files 2>/dev/null | grep -q "guacd"; then
+    check_service "guacd" "guacd"
+    check_service "Tomcat" "tomcat9"
+    check_service "MariaDB" "mariadb"
+fi
+
+echo ""
+
+# PM2 Status
+echo -e "${CYAN}=== PM2 Application ===${NC}"
+if command -v pm2 &> /dev/null; then
+    pm2 list 2>/dev/null | grep -E "Name|saic" || echo -e "  ${YELLOW}No PM2 processes found${NC}"
+else
+    echo -e "  ${YELLOW}PM2 not installed${NC}"
+fi
+echo ""
+
+# Port Status
+echo -e "${CYAN}=== Open Ports ===${NC}"
+ss -tlnp 2>/dev/null | grep -E "LISTEN.*:(80|443|5000|8080|4822)" | while read line; do
+    port=$(echo $line | grep -oP ':\K\d+(?=\s)')
+    echo -e "  Port $port: ${GREEN}[LISTENING]${NC}"
+done
+echo ""
+STATUSEOF
+chmod +x /usr/local/bin/saic-status
+
+# Create saic-logs helper script
+cat > /usr/local/bin/saic-logs << 'LOGSEOF'
+#!/bin/bash
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${CYAN}=== SAIC Log Viewer ===${NC}"
+echo ""
+echo "Select log to view:"
+echo "  1) PM2 Application Logs (live)"
+echo "  2) Nginx Access Log (last 50 lines)"
+echo "  3) Nginx Error Log (last 50 lines)"
+echo "  4) fail2ban Log (last 50 lines)"
+echo "  5) System Auth Log (last 50 lines)"
+echo "  6) All logs combined (live)"
+echo ""
+read -p "Enter choice [1-6]: " CHOICE
+
+case $CHOICE in
+    1)
+        echo -e "${GREEN}Showing PM2 logs (Ctrl+C to exit)...${NC}"
+        pm2 logs saic
+        ;;
+    2)
+        echo -e "${GREEN}Nginx Access Log:${NC}"
+        tail -50 /var/log/nginx/access.log 2>/dev/null || echo "Log not found"
+        ;;
+    3)
+        echo -e "${GREEN}Nginx Error Log:${NC}"
+        tail -50 /var/log/nginx/error.log 2>/dev/null || echo "Log not found"
+        ;;
+    4)
+        echo -e "${GREEN}fail2ban Log:${NC}"
+        tail -50 /var/log/fail2ban.log 2>/dev/null || echo "Log not found"
+        ;;
+    5)
+        echo -e "${GREEN}Auth Log:${NC}"
+        if [ -f /var/log/auth.log ]; then
+            tail -50 /var/log/auth.log
+        elif [ -f /var/log/secure ]; then
+            tail -50 /var/log/secure
+        else
+            echo "Log not found"
+        fi
+        ;;
+    6)
+        echo -e "${GREEN}Combined logs (Ctrl+C to exit)...${NC}"
+        tail -f /var/log/nginx/access.log /var/log/nginx/error.log ~/.pm2/logs/*.log 2>/dev/null
+        ;;
+    *)
+        echo "Invalid choice"
+        ;;
+esac
+LOGSEOF
+chmod +x /usr/local/bin/saic-logs
+
+# Create saic-stats helper script
+cat > /usr/local/bin/saic-stats << 'STATSEOF'
+#!/bin/bash
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║                    SAIC SERVER STATS                       ║${NC}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# CPU Usage
+echo -e "${CYAN}=== CPU Usage ===${NC}"
+cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)
+echo -e "  Usage:       ${GREEN}${cpu_usage}%${NC}"
+echo -e "  Load Avg:    $(cat /proc/loadavg | awk '{print $1, $2, $3}')"
+echo ""
+
+# Memory Usage
+echo -e "${CYAN}=== Memory Usage ===${NC}"
+mem_info=$(free -h | grep Mem)
+mem_total=$(echo $mem_info | awk '{print $2}')
+mem_used=$(echo $mem_info | awk '{print $3}')
+mem_free=$(echo $mem_info | awk '{print $4}')
+echo -e "  Total:       ${mem_total}"
+echo -e "  Used:        ${GREEN}${mem_used}${NC}"
+echo -e "  Free:        ${mem_free}"
+echo ""
+
+# Disk Usage
+echo -e "${CYAN}=== Disk Usage ===${NC}"
+df -h / | tail -1 | awk '{printf "  Total:       %s\n  Used:        \033[0;32m%s (%s)\033[0m\n  Free:        %s\n", $2, $3, $5, $4}'
+echo ""
+
+# Network Stats
+echo -e "${CYAN}=== Network Connections ===${NC}"
+active_conn=$(ss -tun | grep ESTAB | wc -l)
+echo -e "  Active:      ${GREEN}${active_conn}${NC} established connections"
+echo ""
+
+# PM2 Process Stats
+echo -e "${CYAN}=== PM2 Process Stats ===${NC}"
+if command -v pm2 &> /dev/null; then
+    pm2 show saic 2>/dev/null | grep -E "status|memory|cpu|uptime|restarts" | head -6 || echo "  No PM2 process 'saic' found"
+else
+    echo "  PM2 not installed"
+fi
+echo ""
+
+# Quick htop hint
+echo -e "${YELLOW}Tip: Run 'htop' for interactive monitoring${NC}"
+echo ""
+STATSEOF
+chmod +x /usr/local/bin/saic-stats
+
+# Create saic-security helper script
+cat > /usr/local/bin/saic-security << 'SECEOF'
+#!/bin/bash
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║                 SAIC SECURITY STATUS                       ║${NC}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# Firewall Status
+echo -e "${CYAN}=== Firewall Status ===${NC}"
+if command -v ufw &> /dev/null; then
+    ufw_status=$(ufw status 2>/dev/null | head -1)
+    if echo "$ufw_status" | grep -q "active"; then
+        echo -e "  UFW:         ${GREEN}[ACTIVE]${NC}"
+        echo ""
+        echo -e "  ${YELLOW}Allowed Ports:${NC}"
+        ufw status | grep -E "ALLOW" | while read line; do
+            echo "    $line"
+        done
+    else
+        echo -e "  UFW:         ${RED}[INACTIVE]${NC}"
+    fi
+elif command -v firewall-cmd &> /dev/null; then
+    if systemctl is-active --quiet firewalld; then
+        echo -e "  firewalld:   ${GREEN}[ACTIVE]${NC}"
+        echo ""
+        echo -e "  ${YELLOW}Allowed Services:${NC}"
+        firewall-cmd --list-all 2>/dev/null | grep -E "services:|ports:" | while read line; do
+            echo "    $line"
+        done
+    else
+        echo -e "  firewalld:   ${RED}[INACTIVE]${NC}"
+    fi
+fi
+echo ""
+
+# fail2ban Status
+echo -e "${CYAN}=== fail2ban Status ===${NC}"
+if systemctl is-active --quiet fail2ban 2>/dev/null; then
+    echo -e "  Status:      ${GREEN}[ACTIVE]${NC}"
+    echo ""
+    
+    # Get jail list and banned IPs
+    echo -e "  ${YELLOW}Active Jails:${NC}"
+    jails=$(fail2ban-client status 2>/dev/null | grep "Jail list" | cut -d: -f2 | tr ',' '\n')
+    for jail in $jails; do
+        jail=$(echo $jail | xargs)
+        if [ -n "$jail" ]; then
+            banned=$(fail2ban-client status $jail 2>/dev/null | grep "Currently banned" | awk '{print $NF}')
+            total=$(fail2ban-client status $jail 2>/dev/null | grep "Total banned" | awk '{print $NF}')
+            echo -e "    $jail: ${GREEN}${banned}${NC} banned (${total} total)"
+        fi
+    done
+else
+    echo -e "  Status:      ${RED}[INACTIVE]${NC}"
+fi
+echo ""
+
+# Recent Failed Logins
+echo -e "${CYAN}=== Recent Failed Login Attempts (last 10) ===${NC}"
+if [ -f /var/log/auth.log ]; then
+    grep -i "failed\|failure" /var/log/auth.log 2>/dev/null | tail -10 | while read line; do
+        echo "  $line"
+    done
+elif [ -f /var/log/secure ]; then
+    grep -i "failed\|failure" /var/log/secure 2>/dev/null | tail -10 | while read line; do
+        echo "  $line"
+    done
+fi
+echo ""
+
+# Recent Successful SSH Logins
+echo -e "${CYAN}=== Recent SSH Logins (last 5) ===${NC}"
+last -5 2>/dev/null | head -5 | while read line; do
+    echo "  $line"
+done
+echo ""
+
+# Blocked IPs (if any)
+echo -e "${CYAN}=== Currently Banned IPs ===${NC}"
+banned_count=0
+if command -v fail2ban-client &> /dev/null; then
+    for jail in sshd nginx-http-auth nginx-limit-req nginx-botsearch; do
+        ips=$(fail2ban-client status $jail 2>/dev/null | grep "Banned IP" | cut -d: -f2)
+        if [ -n "$ips" ]; then
+            echo -e "  ${YELLOW}$jail:${NC} $ips"
+            banned_count=$((banned_count + 1))
+        fi
+    done
+fi
+if [ $banned_count -eq 0 ]; then
+    echo -e "  ${GREEN}No IPs currently banned${NC}"
+fi
+echo ""
+
+# Security Tips
+echo -e "${YELLOW}=== Security Tips ===${NC}"
+echo "  - Run 'saic-ssl' to enable HTTPS"
+echo "  - Run 'saic-passwd' to set password protection"
+echo "  - Check logs with 'saic-logs'"
+echo ""
+SECEOF
+chmod +x /usr/local/bin/saic-security
 
 # Ask about SSL setup
 echo -e "${CYAN}=== SSL Certificate Setup ===${NC}"
