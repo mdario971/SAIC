@@ -388,26 +388,40 @@ if [ -z "$DETECTED_OS" ]; then
 fi
 
 echo ""
-echo -e "${CYAN}=== Step 2: OpenAI API Key (Required) ===${NC}"
-echo ""
-echo "Get your API key at: https://platform.openai.com/api-keys"
-echo ""
-read -p "Enter your OpenAI API key: " OPENAI_KEY </dev/tty
-if [ -z "$OPENAI_KEY" ]; then
-    echo -e "${RED}OpenAI API key is required!${NC}"
-    exit 1
-fi
-
+OPENAI_KEY=""
 ANTHROPIC_KEY=""
+
 if [ "$INSTALL_GUACAMOLE" = true ]; then
-    echo ""
-    echo -e "${CYAN}=== Step 2b: Anthropic API Key (Required for Claude AI) ===${NC}"
+    # Option 3: Anthropic is required, OpenAI is optional
+    echo -e "${CYAN}=== Step 2: Anthropic API Key (Required for Claude AI) ===${NC}"
     echo ""
     echo "Get your API key at: https://console.anthropic.com/settings/keys"
     echo ""
     read -p "Enter your Anthropic API key: " ANTHROPIC_KEY </dev/tty
     if [ -z "$ANTHROPIC_KEY" ]; then
         echo -e "${RED}Anthropic API key is required for Remote Desktop + AI option!${NC}"
+        exit 1
+    fi
+    
+    echo ""
+    echo -e "${CYAN}=== Step 2b: OpenAI API Key (Optional) ===${NC}"
+    echo ""
+    echo "OpenAI enables AI music code generation in the SAIC app."
+    echo -e "${YELLOW}Leave blank to skip (Claude AI will still work)${NC}"
+    echo ""
+    read -p "Enter your OpenAI API key (or press Enter to skip): " OPENAI_KEY </dev/tty
+    if [ -z "$OPENAI_KEY" ]; then
+        echo -e "${YELLOW}Skipping OpenAI - music generation will be disabled${NC}"
+    fi
+else
+    # Options 1 & 2: OpenAI is required for music generation
+    echo -e "${CYAN}=== Step 2: OpenAI API Key (Required) ===${NC}"
+    echo ""
+    echo "Get your API key at: https://platform.openai.com/api-keys"
+    echo ""
+    read -p "Enter your OpenAI API key: " OPENAI_KEY </dev/tty
+    if [ -z "$OPENAI_KEY" ]; then
+        echo -e "${RED}OpenAI API key is required!${NC}"
         exit 1
     fi
 fi
