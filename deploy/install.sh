@@ -48,28 +48,28 @@ echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║                         INSTALLATION OPTIONS                                  ║${NC}"
 echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}║  OPTION           │ STACK              │ PORTS        │ API KEY REQUIRED     ║${NC}"
+echo -e "${CYAN}║  OPTION           │ STACK              │ PORTS        │ API KEY              ║${NC}"
 echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════════════════╣${NC}"
 echo -e "${CYAN}║${NC}  1) SAIC Classic  ${CYAN}│${NC} Node.js + PM2      ${CYAN}│${NC} 80, 5000     ${CYAN}│${NC} ${GREEN}OpenAI${NC}               ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  2) SAIC Pro      ${CYAN}│${NC} Node.js + PM2      ${CYAN}│${NC} 80, 5000     ${CYAN}│${NC} ${GREEN}OpenAI${NC}               ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}  3) Remote + AI   ${CYAN}│${NC} Tomcat + MariaDB   ${CYAN}│${NC} 80, 8080     ${CYAN}│${NC} ${PURPLE}Anthropic${NC}            ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  3) Remote + AI   ${CYAN}│${NC} Guac + MCP Server  ${CYAN}│${NC} 80, 8080     ${CYAN}│${NC} ${GREEN}FREE (MCP)${NC}           ${CYAN}║${NC}"
 echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════════════════╣${NC}"
 echo -e "${CYAN}║${NC}  ${YELLOW}COMPONENTS INSTALLED:${NC}                                                       ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  ├─ All Options: Nginx, UFW/firewalld, fail2ban, certbot                     ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  ├─ Options 1,2: Node.js 20, PM2, build-essential                            ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}  └─ Option 3:    Tomcat9, MariaDB, guacd, libguac*, Java 11                  ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  └─ Option 3:    Tomcat9, MariaDB, guacd, Strudel MCP Server                 ${CYAN}║${NC}"
 echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════════════════╣${NC}"
 echo -e "${CYAN}║${NC}  ${YELLOW}OPTION DETAILS:${NC}                                                              ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  ├─ 1) Classic:    Simple editor + DJ mode + quick patterns                  ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  │                 Best for: Beginners, mobile music making                  ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  ├─ 2) Pro:        Embedded strudel.cc REPL + music theory tools             ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  │                 Best for: Experienced live coders                         ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}  └─ 3) Remote+AI:  Guacamole remote desktop + Claude AI assistant            ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}                    Best for: Server management, headless VPS access          ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  └─ 3) Remote+AI:  Guacamole remote desktop + Strudel MCP Server            ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}                    Best for: Remote VPS access, headless automation          ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}                    ${GREEN}NO API KEYS - Uses local MCP protocol${NC}                     ${CYAN}║${NC}"
 echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}║${NC}  ${YELLOW}GET API KEYS:${NC}                                                                ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}  ├─ OpenAI:    ${GREEN}https://platform.openai.com/api-keys${NC}                        ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}  └─ Anthropic: ${PURPLE}https://console.anthropic.com/settings/keys${NC}                 ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  ${YELLOW}GET API KEY (Options 1 & 2 only):${NC}                                            ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  └─ OpenAI:    ${GREEN}https://platform.openai.com/api-keys${NC}                        ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}                                                                              ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  ${YELLOW}NEED TEMP EMAIL/PHONE FOR SIGNUP?${NC}                                           ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  ├─ Email:  ${BLUE}https://mail.tm${NC} or ${BLUE}https://temp-mail.io${NC}                       ${CYAN}║${NC}"
@@ -93,7 +93,7 @@ case $VERSION_CHOICE in
     3)
         GIT_BRANCH="Pro"
         INSTALL_GUACAMOLE=true
-        echo -e "${GREEN}Selected: Remote Desktop + AI (Guacamole + Claude)${NC}"
+        echo -e "${GREEN}Selected: Remote Desktop + Strudel MCP Server${NC}"
         ;;
     *)
         GIT_BRANCH="Pro"
@@ -148,6 +148,12 @@ fi
 if [ -f "/usr/local/bin/saic-passwd" ]; then
     FOUND_EXISTING=true
     EXISTING_ITEMS="${EXISTING_ITEMS}\n  - /usr/local/bin/saic-passwd"
+fi
+
+# Check for strudel-start helper script
+if [ -f "/usr/local/bin/strudel-start" ]; then
+    FOUND_EXISTING=true
+    EXISTING_ITEMS="${EXISTING_ITEMS}\n  - /usr/local/bin/strudel-start"
 fi
 
 # Check for Guacamole components
@@ -235,6 +241,13 @@ cleanup_installation() {
     rm -f /usr/local/bin/saic-ssl 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-ssl command"
     rm -f /usr/local/bin/saic-passwd 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-passwd command"
     rm -f /usr/local/bin/saic-status 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-status command"
+    rm -f /usr/local/bin/strudel-start 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed strudel-start command"
+    rm -rf /etc/strudel-mcp 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed strudel-mcp config"
+    systemctl stop strudel-mcp 2>/dev/null && systemctl disable strudel-mcp 2>/dev/null
+    rm -f /etc/systemd/system/strudel-mcp.service 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed strudel-mcp service"
+    if id "strudel" &>/dev/null; then
+        userdel -r strudel 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed strudel user"
+    fi
     rm -f /usr/local/bin/saic-logs 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-logs command"
     rm -f /usr/local/bin/saic-stats 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-stats command"
     rm -f /usr/local/bin/saic-security 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-security command"
@@ -420,27 +433,20 @@ OPENAI_KEY=""
 ANTHROPIC_KEY=""
 
 if [ "$INSTALL_GUACAMOLE" = true ]; then
-    # Option 3: Anthropic is required, OpenAI is optional
-    echo -e "${CYAN}=== Step 2: Anthropic API Key (Required for Claude AI) ===${NC}"
+    # Option 3: Uses MCP protocol - NO API keys needed
+    echo -e "${CYAN}=== Step 2: AI Integration (No API Keys) ===${NC}"
     echo ""
-    echo "Get your API key at: https://console.anthropic.com/settings/keys"
+    echo -e "${GREEN}Good news! Option 3 requires NO API keys.${NC}"
     echo ""
-    read -p "Enter your Anthropic API key: " ANTHROPIC_KEY </dev/tty
-    if [ -z "$ANTHROPIC_KEY" ]; then
-        echo -e "${RED}Anthropic API key is required for Remote Desktop + AI option!${NC}"
-        exit 1
-    fi
-    
+    echo "This option installs:"
+    echo "  - Guacamole (remote desktop via browser)"
+    echo "  - Strudel MCP Server (headless Playwright automation)"
     echo ""
-    echo -e "${CYAN}=== Step 2b: OpenAI API Key (Optional) ===${NC}"
+    echo "You can then:"
+    echo "  - Use Strudel.cc directly at https://strudel.cc"
+    echo "  - OR use Claude Desktop (Mac/Windows) with local MCP"
     echo ""
-    echo "OpenAI enables AI music code generation in the SAIC app."
-    echo -e "${YELLOW}Leave blank to skip (Claude AI will still work)${NC}"
-    echo ""
-    read -p "Enter your OpenAI API key (or press Enter to skip): " OPENAI_KEY </dev/tty
-    if [ -z "$OPENAI_KEY" ]; then
-        echo -e "${YELLOW}Skipping OpenAI - music generation will be disabled${NC}"
-    fi
+    read -p "Press Enter to continue..." </dev/tty
 else
     # Options 1 & 2: OpenAI is required for music generation
     echo -e "${CYAN}=== Step 2: OpenAI API Key (Required) ===${NC}"
@@ -501,7 +507,7 @@ echo ""
 echo -e "${CYAN}=== Configuration Summary ===${NC}"
 echo ""
 if [ "$INSTALL_GUACAMOLE" = true ]; then
-    echo -e "  Install:      ${GREEN}Remote Desktop + AI (Guacamole + Claude)${NC}"
+    echo -e "  Install:      ${GREEN}Remote Desktop + Strudel MCP${NC}"
 else
     echo -e "  Version:      ${GREEN}$([ "$GIT_BRANCH" == "main" ] && echo "Classic Mode" || echo "Pro Mode")${NC}"
 fi
@@ -525,7 +531,7 @@ echo -e "  Port:         ${GREEN}$APP_PORT${NC}"
 echo -e "  Method:       ${GREEN}$([ "$INSTALL_METHOD" == "1" ] && echo "Git Clone" || echo "Embedded")${NC}"
 if [ "$INSTALL_GUACAMOLE" = true ]; then
     echo -e "  Guacamole:    ${GREEN}Enabled (port 8080 -> /guac)${NC}"
-    echo -e "  Claude AI:    ${GREEN}Enabled (/assistant)${NC}"
+    echo -e "  Strudel MCP:  ${GREEN}Enabled (headless mode)${NC}"
 fi
 echo ""
 read -p "Proceed with installation? (Y/n): " CONFIRM </dev/tty
@@ -837,6 +843,130 @@ PROPEOF
     
     echo -e "${GREEN}Guacamole installed! Access at /guac (default: guacadmin/guacadmin)${NC}"
     rm -rf /tmp/guac_build /tmp/mysql-connector* /tmp/guacamole-auth-jdbc*
+}
+
+# =============================================
+# STRUDEL MCP SERVER INSTALLATION
+# =============================================
+
+install_strudel_mcp_server() {
+    echo -e "${BLUE}Installing Strudel MCP Server for AI-powered live coding...${NC}"
+    echo ""
+    
+    # Install Node.js if not already installed
+    if ! command -v node &> /dev/null; then
+        echo -e "${BLUE}Installing Node.js 20...${NC}"
+        if [ "$DETECTED_OS" == "debian" ]; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+            apt install -y nodejs
+        else
+            curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+            dnf install -y nodejs
+        fi
+    fi
+    
+    # Create strudel system user for running MCP server
+    echo -e "${BLUE}Creating strudel user...${NC}"
+    if ! id "strudel" &>/dev/null; then
+        useradd -r -m -d /home/strudel -s /bin/bash strudel
+    fi
+    
+    # Install Strudel MCP Server globally
+    echo -e "${BLUE}Installing Strudel MCP Server via npm...${NC}"
+    npm install -g @williamzujkowski/strudel-mcp-server
+    
+    # Install Playwright with headless Chromium (no X11 needed)
+    echo -e "${BLUE}Installing Playwright with headless Chromium...${NC}"
+    npm install -g playwright
+    
+    # Install Chromium with all dependencies for headless mode
+    if [ "$DETECTED_OS" == "debian" ]; then
+        apt install -y xvfb chromium
+        npx playwright install-deps chromium 2>/dev/null || true
+    else
+        dnf install -y xorg-x11-server-Xvfb chromium
+        npx playwright install-deps chromium 2>/dev/null || true
+    fi
+    npx playwright install chromium
+    
+    # Create MCP configuration directory
+    mkdir -p /etc/strudel-mcp
+    mkdir -p /home/strudel/.config
+    chown -R strudel:strudel /home/strudel
+    
+    # Store MCP server config
+    cat > /etc/strudel-mcp/config.json << 'MCPEOF'
+{
+  "headless": true,
+  "browser": "chromium",
+  "slowMo": 0
+}
+MCPEOF
+    
+    # Create a systemd service for headless MCP server with xvfb
+    cat > /etc/systemd/system/strudel-mcp.service << 'MCPSVCEOF'
+[Unit]
+Description=Strudel MCP Server for AI Live Coding (Headless)
+After=network.target
+
+[Service]
+Type=simple
+User=strudel
+Environment=NODE_ENV=production
+Environment=PLAYWRIGHT_CHROMIUM_HEADLESS=1
+ExecStart=/usr/bin/xvfb-run -a /usr/bin/npx -y @williamzujkowski/strudel-mcp-server
+Restart=on-failure
+RestartSec=10
+WorkingDirectory=/home/strudel
+
+[Install]
+WantedBy=multi-user.target
+MCPSVCEOF
+
+    systemctl daemon-reload
+    systemctl enable --now strudel-mcp
+    echo -e "  ${GREEN}[OK]${NC} Strudel MCP service started"
+    
+    # Create quick start script for manual use
+    cat > /usr/local/bin/strudel-start << 'STARTEOF'
+#!/bin/bash
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║           STRUDEL LIVE CODING - QUICK START                ║${NC}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${GREEN}This VPS has the Strudel MCP Server running in headless mode.${NC}"
+echo ""
+echo -e "${YELLOW}=== Option A: Direct Browser Access (Recommended) ===${NC}"
+echo ""
+echo "  Simply open ${GREEN}https://strudel.cc${NC} in any browser!"
+echo "  No setup needed - start live coding music immediately."
+echo ""
+echo -e "${YELLOW}=== Option B: AI-Assisted with Claude Desktop ===${NC}"
+echo ""
+echo "  Claude Desktop runs on YOUR Mac/Windows computer (not VPS)."
+echo "  The MCP server runs locally on your machine."
+echo ""
+echo "  1. Install Claude Desktop: https://claude.ai/download"
+echo "  2. Add to ~/Library/Application Support/Claude/claude_desktop_config.json:"
+echo ""
+echo '     {"mcpServers": {"strudel": {"command": "npx", "args": ["-y", "@williamzujkowski/strudel-mcp-server"]}}}'
+echo ""
+echo "  3. Restart Claude Desktop"
+echo "  4. Ask Claude: 'Initialize Strudel and create a techno beat'"
+echo ""
+echo -e "${CYAN}NOTE: MCP runs locally via stdio protocol, not over network.${NC}"
+echo -e "${CYAN}The VPS MCP server is for headless automation scenarios.${NC}"
+echo ""
+STARTEOF
+    chmod +x /usr/local/bin/strudel-start
+    
+    echo -e "${GREEN}Strudel MCP Server installed!${NC}"
+    echo ""
 }
 
 clone_repo() {
@@ -1444,7 +1574,7 @@ fi
 
 install_pm2
 
-# Install Guacamole if option 3 selected
+# Install Guacamole and Strudel MCP Server if option 3 selected
 if [ "$INSTALL_GUACAMOLE" = true ]; then
     echo ""
     echo -e "${BLUE}Installing Guacamole Remote Desktop...${NC}"
@@ -1453,6 +1583,10 @@ if [ "$INSTALL_GUACAMOLE" = true ]; then
     else
         install_guacamole_rocky
     fi
+    
+    echo ""
+    echo -e "${BLUE}Installing Strudel MCP Server...${NC}"
+    install_strudel_mcp_server
 fi
 
 # Clone or create embedded
@@ -1535,8 +1669,15 @@ if [ "$INSTALL_GUACAMOLE" = true ]; then
     echo -e "  Username:     ${GREEN}guacadmin${NC}"
     echo -e "  Password:     ${GREEN}guacadmin${NC} (change immediately!)"
     echo ""
-    echo -e "${CYAN}=== Claude AI Assistant ===${NC}"
-    echo -e "  URL:          ${GREEN}http://$SERVER_IP/assistant/${NC}"
+    echo -e "${CYAN}=== Strudel Live Coding ===${NC}"
+    echo -e "  ${GREEN}NO API KEYS REQUIRED${NC}"
+    echo ""
+    echo -e "  Option A: Direct Access (easiest)"
+    echo -e "    Open ${GREEN}https://strudel.cc${NC} in any browser"
+    echo ""
+    echo -e "  Option B: AI-Assisted (Claude Desktop on YOUR computer)"
+    echo -e "    1. Install Claude Desktop on Mac/Windows"
+    echo -e "    2. Run: ${YELLOW}strudel-start${NC} on VPS for setup instructions"
     echo ""
 fi
 

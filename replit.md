@@ -25,9 +25,32 @@ A mobile-optimized web application that combines Strudel (a live coding music en
 ## Installation Options
 
 The universal installer (`deploy/install.sh`) supports three options:
-1. **SAIC Classic** - Main branch with Simple and DJ modes
-2. **SAIC Pro** - Pro branch with embedded strudel.cc REPL
-3. **Guacamole + Claude AI** - Remote desktop with AI server assistant
+
+| Option | Description | API Key | Stack |
+|--------|-------------|---------|-------|
+| 1. SAIC Classic | Simple editor + DJ mode | OpenAI required | Node.js, PM2 |
+| 2. SAIC Pro | Embedded strudel.cc REPL | OpenAI required | Node.js, PM2 |
+| 3. Remote + AI | Guacamole + Strudel MCP | **FREE (no API keys)** | Tomcat, MariaDB, MCP |
+
+### Option 3: Strudel MCP Server Integration
+
+Option 3 uses the **Model Context Protocol (MCP)** - an open standard by Anthropic that enables AI tools without API keys:
+
+- **Guacamole**: Remote desktop access via web browser
+- **Strudel MCP Server**: Runs headless on VPS with xvfb + Playwright
+- **No API costs**: MCP runs locally via stdio protocol
+
+**How it works:**
+
+*Option A: Direct Browser Access (Recommended)*
+1. Open https://strudel.cc in any browser
+2. Start live coding music immediately
+
+*Option B: AI-Assisted with Claude Desktop*
+1. Install Claude Desktop on your Mac/Windows machine
+2. Add MCP config to Claude Desktop (see strudel-start for details)
+3. Ask Claude: "Initialize Strudel and create a techno beat"
+4. MCP server runs locally on your machine, not over network
 
 ### Pre-Installation Cleanup
 
@@ -40,7 +63,7 @@ The installer automatically detects and handles existing/failed installations:
 - Guacamole components (guacd, /etc/guacamole, WAR files)
 - MariaDB guacamole_db database
 - Port conflicts (5000, 8080, 4822)
-- Helper scripts (saic-ssl, saic-passwd, saic-status, saic-logs, saic-stats, saic-security)
+- Helper scripts (saic-ssl, saic-passwd, saic-status, saic-logs, saic-stats, saic-security, strudel-start)
 
 **User options when existing installation found:**
 1. **Clean reinstall** - Remove everything and start fresh
@@ -65,6 +88,7 @@ After installation, these commands are available:
 - `saic-security` - Firewall status, banned IPs, failed logins
 - `saic-passwd` - Change/reset password protection
 - `saic-ssl` - Setup Let's Encrypt SSL certificate
+- `strudel-start` - Launch Strudel.cc browser (Option 3 only)
 
 ## Project Architecture
 
