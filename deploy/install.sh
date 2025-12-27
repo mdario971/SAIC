@@ -115,7 +115,6 @@ echo -e "${CYAN}=== Checking for Existing Installation ===${NC}"
 echo ""
 
 FOUND_EXISTING=false
-FOUND_GUACAMOLE=false
 EXISTING_ITEMS=""
 
 # Check for SAIC directory
@@ -126,7 +125,7 @@ fi
 
 # Check for PM2 process
 if command -v pm2 &> /dev/null; then
-    if pm2 list 2>/dev/null | grep -qE "saic|saic-pro"; then
+    if pm2 list 2>/dev/null | grep -q "saic"; then
         FOUND_EXISTING=true
         EXISTING_ITEMS="${EXISTING_ITEMS}\n  - PM2 process 'saic'"
     fi
@@ -144,218 +143,77 @@ if [ -f "/usr/local/bin/saic-ssl" ]; then
     EXISTING_ITEMS="${EXISTING_ITEMS}\n  - /usr/local/bin/saic-ssl"
 fi
 
-# Check for password helper script
-if [ -f "/usr/local/bin/saic-passwd" ]; then
-    FOUND_EXISTING=true
-    EXISTING_ITEMS="${EXISTING_ITEMS}\n  - /usr/local/bin/saic-passwd"
-fi
-
-# Check for Guacamole components
-if systemctl list-unit-files 2>/dev/null | grep -q "guacd"; then
-    FOUND_EXISTING=true
-    FOUND_GUACAMOLE=true
-    EXISTING_ITEMS="${EXISTING_ITEMS}\n  - guacd service (Guacamole daemon)"
-fi
-
-if [ -d "/etc/guacamole" ]; then
-    FOUND_EXISTING=true
-    FOUND_GUACAMOLE=true
-    EXISTING_ITEMS="${EXISTING_ITEMS}\n  - /etc/guacamole (Guacamole config)"
-fi
-
-if [ -f "/var/lib/tomcat9/webapps/guacamole.war" ] || [ -f "/usr/share/tomcat/webapps/guacamole.war" ]; then
-    FOUND_EXISTING=true
-    FOUND_GUACAMOLE=true
-    EXISTING_ITEMS="${EXISTING_ITEMS}\n  - Guacamole WAR (Tomcat webapp)"
-fi
-
-# Check for Guacamole database
-if command -v mysql &> /dev/null; then
-    if mysql -u root -e "SHOW DATABASES;" 2>/dev/null | grep -q "guacamole_db"; then
-        FOUND_EXISTING=true
-        FOUND_GUACAMOLE=true
-        EXISTING_ITEMS="${EXISTING_ITEMS}\n  - guacamole_db (MariaDB database)"
-    fi
-fi
-
-# Check for port conflicts
-PORT_CONFLICTS=""
-check_port() {
-    local port=$1
-    local desc=$2
-    if ss -tlnp 2>/dev/null | grep -q ":${port} " || netstat -tlnp 2>/dev/null | grep -q ":${port} "; then
-        PORT_CONFLICTS="${PORT_CONFLICTS}\n  - Port ${port} (${desc})"
-    fi
-}
-
-check_port 5000 "SAIC app"
-check_port 8080 "Tomcat/Guacamole"
-check_port 4822 "guacd daemon"
-
-if [ -n "$PORT_CONFLICTS" ]; then
-    FOUND_EXISTING=true
-    EXISTING_ITEMS="${EXISTING_ITEMS}\n${YELLOW}Port conflicts detected:${NC}${PORT_CONFLICTS}"
-fi
-
-# Cleanup function for thorough removal
-cleanup_installation() {
-    local clean_guacamole=$1
-    
-    echo ""
-    echo -e "${BLUE}Cleaning existing installation...${NC}"
-    
-    # Stop and delete PM2 processes
-    if command -v pm2 &> /dev/null; then
-        pm2 stop saic 2>/dev/null || true
-        pm2 stop saic-pro 2>/dev/null || true
-        pm2 delete saic 2>/dev/null || true
-        pm2 delete saic-pro 2>/dev/null || true
-        pm2 save 2>/dev/null || true
-        echo -e "  ${GREEN}✓${NC} Stopped PM2 processes"
-    fi
-    
-    # Remove app directory
-    if [ -d "/opt/SAIC" ]; then
-        rm -rf /opt/SAIC
-        echo -e "  ${GREEN}✓${NC} Removed /opt/SAIC"
-    fi
-    
-    # Remove nginx configs
-    if [ -f "/etc/nginx/sites-available/saic" ]; then
-        rm -f /etc/nginx/sites-available/saic
-        rm -f /etc/nginx/sites-enabled/saic
-        echo -e "  ${GREEN}✓${NC} Removed Nginx config (Debian)"
-    fi
-    if [ -f "/etc/nginx/conf.d/saic.conf" ]; then
-        rm -f /etc/nginx/conf.d/saic.conf
-        echo -e "  ${GREEN}✓${NC} Removed Nginx config (Rocky)"
-    fi
-    
-    # Remove helper scripts
-    rm -f /usr/local/bin/saic-ssl 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-ssl command"
-    rm -f /usr/local/bin/saic-passwd 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-passwd command"
-    rm -f /usr/local/bin/saic-status 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-status command"
-    rm -f /usr/local/bin/saic-logs 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-logs command"
-    rm -f /usr/local/bin/saic-stats 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-stats command"
-    rm -f /usr/local/bin/saic-security 2>/dev/null && echo -e "  ${GREEN}✓${NC} Removed saic-security command"
-    
-    # Clean Guacamole if requested
-    if [ "$clean_guacamole" = true ]; then
-        echo -e "${BLUE}Cleaning Guacamole components...${NC}"
-        
-        # Stop services
-        systemctl stop guacd 2>/dev/null || true
-        systemctl stop tomcat9 2>/dev/null || true
-        systemctl stop tomcat 2>/dev/null || true
-        systemctl disable guacd 2>/dev/null || true
-        
-        # Remove guacd service file
-        rm -f /etc/systemd/system/guacd.service
-        systemctl daemon-reload 2>/dev/null || true
-        echo -e "  ${GREEN}✓${NC} Stopped and removed guacd service"
-        
-        # Remove Guacamole config and WAR
-        rm -rf /etc/guacamole
-        rm -f /var/lib/tomcat9/webapps/guacamole.war 2>/dev/null
-        rm -rf /var/lib/tomcat9/webapps/guacamole 2>/dev/null
-        rm -f /usr/share/tomcat/webapps/guacamole.war 2>/dev/null
-        rm -rf /usr/share/tomcat/webapps/guacamole 2>/dev/null
-        echo -e "  ${GREEN}✓${NC} Removed Guacamole config and webapp"
-        
-        # Drop Guacamole database
-        if command -v mysql &> /dev/null; then
-            mysql -u root -e "DROP DATABASE IF EXISTS guacamole_db; DROP USER IF EXISTS 'guacamole_user'@'localhost';" 2>/dev/null || true
-            echo -e "  ${GREEN}✓${NC} Dropped guacamole_db database"
-        fi
-        
-        # Remove compiled guacd binaries
-        rm -f /usr/local/sbin/guacd 2>/dev/null
-        rm -rf /usr/local/lib/libguac* 2>/dev/null
-        ldconfig 2>/dev/null || true
-        echo -e "  ${GREEN}✓${NC} Removed guacd binaries"
-    fi
-    
-    # Kill processes on conflicting ports (use fuser or lsof, whichever is available)
-    for port in 5000 8080 4822; do
-        local killed=false
-        if command -v fuser &> /dev/null; then
-            fuser -k $port/tcp 2>/dev/null && killed=true
-        elif command -v lsof &> /dev/null; then
-            local pid=$(lsof -ti:$port 2>/dev/null || echo "")
-            if [ -n "$pid" ]; then
-                kill $pid 2>/dev/null && killed=true
-            fi
-        elif command -v ss &> /dev/null; then
-            # ss can show PIDs but requires parsing
-            local pid=$(ss -tlnp 2>/dev/null | grep ":$port " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)
-            if [ -n "$pid" ]; then
-                kill $pid 2>/dev/null && killed=true
-            fi
-        fi
-        if [ "$killed" = true ]; then
-            echo -e "  ${GREEN}✓${NC} Killed process on port $port"
-        fi
-    done
-    
-    # Reload nginx if running
-    if systemctl is-active --quiet nginx; then
-        nginx -t 2>/dev/null && systemctl reload nginx
-        echo -e "  ${GREEN}✓${NC} Reloaded Nginx"
-    fi
-    
-    echo -e "${GREEN}Cleanup complete!${NC}"
-}
-
 if [ "$FOUND_EXISTING" = true ]; then
-    echo -e "${YELLOW}Existing installation detected:${NC}"
+    echo -e "${YELLOW}Existing SAIC installation detected:${NC}"
     echo -e "$EXISTING_ITEMS"
     echo ""
-    echo -e "${CYAN}What would you like to do?${NC}"
-    echo -e "  ${CYAN}1)${NC} Clean reinstall - Remove everything and start fresh"
-    echo -e "  ${CYAN}2)${NC} Upgrade in-place - Keep configs, update code only"
-    echo -e "  ${CYAN}3)${NC} Abort - Exit without changes"
-    echo ""
-    read -p "Enter choice (1, 2, or 3) [1]: " CLEANUP_CHOICE </dev/tty
-    CLEANUP_CHOICE=${CLEANUP_CHOICE:-1}
+    read -p "Remove existing installation before continuing? (Y/n): " CLEAN_EXISTING </dev/tty
     
-    case $CLEANUP_CHOICE in
-        1)
-            if [ "$FOUND_GUACAMOLE" = true ]; then
-                echo ""
-                read -p "Also remove Guacamole and its database? (Y/n): " CLEAN_GUAC </dev/tty
-                if [[ ! "$CLEAN_GUAC" =~ ^[Nn]$ ]]; then
-                    cleanup_installation true
-                else
-                    cleanup_installation false
-                fi
-            else
-                cleanup_installation false
-            fi
-            ;;
-        2)
-            echo -e "${YELLOW}Upgrade mode: Will overwrite application files only.${NC}"
-            # Just stop PM2, don't remove anything
-            if command -v pm2 &> /dev/null; then
-                pm2 stop saic 2>/dev/null || true
-                pm2 stop saic-pro 2>/dev/null || true
-            fi
-            ;;
-        3)
-            echo -e "${RED}Installation aborted.${NC}"
-            exit 0
-            ;;
-        *)
-            echo -e "${YELLOW}Invalid choice, proceeding with clean reinstall.${NC}"
-            cleanup_installation false
-            ;;
-    esac
+    if [[ ! "$CLEAN_EXISTING" =~ ^[Nn]$ ]]; then
+        echo ""
+        echo -e "${BLUE}Cleaning existing installation...${NC}"
+        
+        # Stop and delete PM2 process
+        if command -v pm2 &> /dev/null; then
+            pm2 stop saic 2>/dev/null || true
+            pm2 delete saic 2>/dev/null || true
+            pm2 save 2>/dev/null || true
+        fi
+        
+        # Remove app directory
+        if [ -d "/opt/SAIC" ]; then
+            rm -rf /opt/SAIC
+            echo -e "  Removed /opt/SAIC"
+        fi
+        
+        # Remove nginx configs
+        if [ -f "/etc/nginx/sites-available/saic" ]; then
+            rm -f /etc/nginx/sites-available/saic
+            rm -f /etc/nginx/sites-enabled/saic
+            echo -e "  Removed Nginx config (Debian)"
+        fi
+        if [ -f "/etc/nginx/conf.d/saic.conf" ]; then
+            rm -f /etc/nginx/conf.d/saic.conf
+            echo -e "  Removed Nginx config (Rocky)"
+        fi
+        
+        # Remove SSL helper
+        if [ -f "/usr/local/bin/saic-ssl" ]; then
+            rm -f /usr/local/bin/saic-ssl
+            echo -e "  Removed saic-ssl command"
+        fi
+        
+        # Reload nginx if running
+        if systemctl is-active --quiet nginx; then
+            nginx -t 2>/dev/null && systemctl reload nginx
+        fi
+        
+        echo -e "${GREEN}Cleanup complete!${NC}"
+    else
+        echo -e "${YELLOW}Keeping existing installation. Will overwrite files.${NC}"
+    fi
 else
     echo -e "${GREEN}No existing installation detected.${NC}"
     echo ""
     read -p "Check and clean any leftover files anyway? (y/N): " CLEAN_ANYWAY </dev/tty
     
     if [[ "$CLEAN_ANYWAY" =~ ^[Yy]$ ]]; then
-        cleanup_installation false
+        echo -e "${BLUE}Checking for leftover files...${NC}"
+        
+        # Stop and delete PM2 process if exists
+        if command -v pm2 &> /dev/null; then
+            pm2 stop saic 2>/dev/null || true
+            pm2 delete saic 2>/dev/null || true
+        fi
+        
+        # Remove potential leftovers
+        rm -rf /opt/SAIC 2>/dev/null || true
+        rm -f /etc/nginx/sites-available/saic 2>/dev/null || true
+        rm -f /etc/nginx/sites-enabled/saic 2>/dev/null || true
+        rm -f /etc/nginx/conf.d/saic.conf 2>/dev/null || true
+        rm -f /usr/local/bin/saic-ssl 2>/dev/null || true
+        
+        echo -e "${GREEN}Cleanup complete!${NC}"
     fi
 fi
 
@@ -523,10 +381,6 @@ else
 fi
 echo -e "  Port:         ${GREEN}$APP_PORT${NC}"
 echo -e "  Method:       ${GREEN}$([ "$INSTALL_METHOD" == "1" ] && echo "Git Clone" || echo "Embedded")${NC}"
-if [ "$INSTALL_GUACAMOLE" = true ]; then
-    echo -e "  Guacamole:    ${GREEN}Enabled (port 8080 -> /guac)${NC}"
-    echo -e "  Claude AI:    ${GREEN}Enabled (/assistant)${NC}"
-fi
 echo ""
 read -p "Proceed with installation? (Y/n): " CONFIRM </dev/tty
 if [[ "$CONFIRM" =~ ^[Nn]$ ]]; then
@@ -559,8 +413,7 @@ install_rocky_deps() {
     dnf update -y
     
     echo -e "${BLUE}[2/8] Installing dependencies...${NC}"
-    dnf install -y curl git nginx firewalld epel-release chromium xorg-x11-server-Xvfb htop
-    dnf install -y fail2ban fail2ban-firewalld
+    dnf install -y curl git nginx firewalld fail2ban epel-release chromium xorg-x11-server-Xvfb htop
     
     echo -e "${BLUE}[3/8] Installing Node.js 20...${NC}"
     if ! command -v node &> /dev/null; then
@@ -656,187 +509,6 @@ JAILEOF
         echo -e "  ${YELLOW}[WARN]${NC} fail2ban restart had issues, checking status..."
         systemctl status fail2ban --no-pager 2>/dev/null || true
     fi
-}
-
-# =============================================
-# GUACAMOLE INSTALLATION FUNCTIONS
-# =============================================
-
-install_guacamole_debian() {
-    echo -e "${BLUE}Installing Guacamole dependencies...${NC}"
-    
-    apt install -y build-essential libcairo2-dev libjpeg62-turbo-dev \
-        libpng-dev libtool-bin uuid-dev libossp-uuid-dev libavcodec-dev \
-        libavformat-dev libavutil-dev libswscale-dev freerdp2-dev \
-        libpango1.0-dev libssh2-1-dev libvncserver-dev libtelnet-dev \
-        libwebsockets-dev libssl-dev libvorbis-dev libwebp-dev libpulse-dev \
-        tomcat9 tomcat9-admin mariadb-server
-    
-    echo -e "${BLUE}Building guacamole-server 1.5.5...${NC}"
-    GUAC_VER="1.5.5"
-    mkdir -p /tmp/guac_build && cd /tmp/guac_build
-    
-    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/source/guacamole-server-$GUAC_VER.tar.gz
-    tar xzf guacamole-server-$GUAC_VER.tar.gz
-    cd guacamole-server-$GUAC_VER
-    
-    ./configure --with-init-dir=/etc/init.d --enable-allow-freerdp-snapshots
-    make -j$(nproc)
-    make install
-    ldconfig
-    
-    cat > /etc/systemd/system/guacd.service << 'GUACDEOF'
-[Unit]
-Description=Guacamole Server
-After=network.target
-
-[Service]
-Type=forking
-ExecStart=/usr/local/sbin/guacd
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-GUACDEOF
-
-    systemctl daemon-reload
-    systemctl enable --now guacd
-    
-    echo -e "${BLUE}Setting up Guacamole web application...${NC}"
-    mkdir -p /etc/guacamole/{extensions,lib}
-    
-    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/binary/guacamole-$GUAC_VER.war \
-        -O /var/lib/tomcat9/webapps/guacamole.war
-    
-    wget -q https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-j-8.0.33.tar.gz \
-        -O /tmp/mysql-connector.tar.gz
-    tar xzf /tmp/mysql-connector.tar.gz -C /tmp
-    cp /tmp/mysql-connector-j-8.0.33/mysql-connector-j-8.0.33.jar /etc/guacamole/lib/
-    
-    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/binary/guacamole-auth-jdbc-$GUAC_VER.tar.gz \
-        -O /tmp/guacamole-auth-jdbc.tar.gz
-    tar xzf /tmp/guacamole-auth-jdbc.tar.gz -C /tmp
-    cp /tmp/guacamole-auth-jdbc-$GUAC_VER/mysql/guacamole-auth-jdbc-mysql-$GUAC_VER.jar /etc/guacamole/extensions/
-    
-    echo -e "${BLUE}Configuring MariaDB for Guacamole...${NC}"
-    systemctl enable --now mariadb
-    
-    GUAC_DB_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 20)
-    
-    mysql -u root << SQLEOF
-CREATE DATABASE IF NOT EXISTS guacamole_db;
-CREATE USER IF NOT EXISTS 'guacamole_user'@'localhost' IDENTIFIED BY '$GUAC_DB_PASS';
-GRANT SELECT,INSERT,UPDATE,DELETE ON guacamole_db.* TO 'guacamole_user'@'localhost';
-FLUSH PRIVILEGES;
-SQLEOF
-    
-    cat /tmp/guacamole-auth-jdbc-$GUAC_VER/mysql/schema/*.sql | mysql -u root guacamole_db
-    
-    cat > /etc/guacamole/guacamole.properties << PROPEOF
-guacd-hostname: localhost
-guacd-port: 4822
-mysql-hostname: 127.0.0.1
-mysql-port: 3306
-mysql-database: guacamole_db
-mysql-username: guacamole_user
-mysql-password: $GUAC_DB_PASS
-PROPEOF
-    
-    echo "GUACAMOLE_HOME=/etc/guacamole" >> /etc/default/tomcat9
-    
-    systemctl restart tomcat9 guacd
-    
-    echo -e "${GREEN}Guacamole installed! Access at /guac (default: guacadmin/guacadmin)${NC}"
-    rm -rf /tmp/guac_build /tmp/mysql-connector* /tmp/guacamole-auth-jdbc*
-}
-
-install_guacamole_rocky() {
-    echo -e "${BLUE}Installing Guacamole dependencies for Rocky/RHEL...${NC}"
-    
-    dnf install -y cairo-devel libjpeg-turbo-devel libpng-devel \
-        libtool uuid-devel ffmpeg-devel freerdp-devel pango-devel \
-        libssh2-devel libvncserver-devel openssl-devel libvorbis-devel \
-        libwebp-devel pulseaudio-libs-devel libwebsockets-devel \
-        java-11-openjdk mariadb-server
-    
-    dnf install -y tomcat
-    
-    echo -e "${BLUE}Building guacamole-server 1.5.5...${NC}"
-    GUAC_VER="1.5.5"
-    mkdir -p /tmp/guac_build && cd /tmp/guac_build
-    
-    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/source/guacamole-server-$GUAC_VER.tar.gz
-    tar xzf guacamole-server-$GUAC_VER.tar.gz
-    cd guacamole-server-$GUAC_VER
-    
-    ./configure --with-init-dir=/etc/init.d
-    make -j$(nproc)
-    make install
-    ldconfig
-    
-    cat > /etc/systemd/system/guacd.service << 'GUACDEOF'
-[Unit]
-Description=Guacamole Server
-After=network.target
-
-[Service]
-Type=forking
-ExecStart=/usr/local/sbin/guacd
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-GUACDEOF
-
-    systemctl daemon-reload
-    systemctl enable --now guacd
-    
-    echo -e "${BLUE}Setting up Guacamole web application...${NC}"
-    mkdir -p /etc/guacamole/{extensions,lib}
-    
-    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/binary/guacamole-$GUAC_VER.war \
-        -O /var/lib/tomcat/webapps/guacamole.war
-    
-    wget -q https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-j-8.0.33.tar.gz \
-        -O /tmp/mysql-connector.tar.gz
-    tar xzf /tmp/mysql-connector.tar.gz -C /tmp
-    cp /tmp/mysql-connector-j-8.0.33/mysql-connector-j-8.0.33.jar /etc/guacamole/lib/
-    
-    wget -q https://downloads.apache.org/guacamole/$GUAC_VER/binary/guacamole-auth-jdbc-$GUAC_VER.tar.gz \
-        -O /tmp/guacamole-auth-jdbc.tar.gz
-    tar xzf /tmp/guacamole-auth-jdbc.tar.gz -C /tmp
-    cp /tmp/guacamole-auth-jdbc-$GUAC_VER/mysql/guacamole-auth-jdbc-mysql-$GUAC_VER.jar /etc/guacamole/extensions/
-    
-    echo -e "${BLUE}Configuring MariaDB for Guacamole...${NC}"
-    systemctl enable --now mariadb
-    
-    GUAC_DB_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 20)
-    
-    mysql -u root << SQLEOF
-CREATE DATABASE IF NOT EXISTS guacamole_db;
-CREATE USER IF NOT EXISTS 'guacamole_user'@'localhost' IDENTIFIED BY '$GUAC_DB_PASS';
-GRANT SELECT,INSERT,UPDATE,DELETE ON guacamole_db.* TO 'guacamole_user'@'localhost';
-FLUSH PRIVILEGES;
-SQLEOF
-    
-    cat /tmp/guacamole-auth-jdbc-$GUAC_VER/mysql/schema/*.sql | mysql -u root guacamole_db
-    
-    cat > /etc/guacamole/guacamole.properties << PROPEOF
-guacd-hostname: localhost
-guacd-port: 4822
-mysql-hostname: 127.0.0.1
-mysql-port: 3306
-mysql-database: guacamole_db
-mysql-username: guacamole_user
-mysql-password: $GUAC_DB_PASS
-PROPEOF
-    
-    echo "GUACAMOLE_HOME=/etc/guacamole" >> /etc/sysconfig/tomcat
-    
-    systemctl restart tomcat guacd
-    
-    echo -e "${GREEN}Guacamole installed! Access at /guac (default: guacadmin/guacadmin)${NC}"
-    rm -rf /tmp/guac_build /tmp/mysql-connector* /tmp/guacamole-auth-jdbc*
 }
 
 clone_repo() {
@@ -1268,12 +940,6 @@ OPENAI_API_KEY=$OPENAI_KEY
 PORT=$APP_PORT
 EOF
 
-    if [ -n "$ANTHROPIC_KEY" ]; then
-        cat >> .env << EOF
-ANTHROPIC_API_KEY=$ANTHROPIC_KEY
-EOF
-    fi
-
     if [ -n "$AUTH_USER" ]; then
         cat >> .env << EOF
 AUTH_USER=$AUTH_USER
@@ -1285,36 +951,7 @@ EOF
 }
 
 configure_debian_nginx() {
-    if [ "$INSTALL_GUACAMOLE" = true ]; then
-        cat > /etc/nginx/sites-available/saic << EOF
-server {
-    listen 80;
-    server_name _;
-    
-    location / {
-        proxy_pass http://127.0.0.1:$APP_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_cache_bypass \$http_upgrade;
-    }
-    
-    location /guacamole/ {
-        proxy_pass http://127.0.0.1:8080/guacamole/;
-        proxy_buffering off;
-        proxy_http_version 1.1;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \$http_connection;
-        proxy_cookie_path /guacamole/ /guacamole/;
-        access_log off;
-    }
-}
-EOF
-    else
-        cat > /etc/nginx/sites-available/saic << EOF
+    cat > /etc/nginx/sites-available/saic << EOF
 server {
     listen 80;
     server_name _;
@@ -1329,7 +966,6 @@ server {
     }
 }
 EOF
-    fi
     ln -sf /etc/nginx/sites-available/saic /etc/nginx/sites-enabled/
     rm -f /etc/nginx/sites-enabled/default
     nginx -t && systemctl reload nginx
@@ -1342,36 +978,7 @@ EOF
 configure_rocky_nginx() {
     setsebool -P httpd_can_network_connect 1
     
-    if [ "$INSTALL_GUACAMOLE" = true ]; then
-        cat > /etc/nginx/conf.d/saic.conf << EOF
-server {
-    listen 80;
-    server_name _;
-    
-    location / {
-        proxy_pass http://127.0.0.1:$APP_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_cache_bypass \$http_upgrade;
-    }
-    
-    location /guacamole/ {
-        proxy_pass http://127.0.0.1:8080/guacamole/;
-        proxy_buffering off;
-        proxy_http_version 1.1;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \$http_connection;
-        proxy_cookie_path /guacamole/ /guacamole/;
-        access_log off;
-    }
-}
-EOF
-    else
-        cat > /etc/nginx/conf.d/saic.conf << EOF
+    cat > /etc/nginx/conf.d/saic.conf << EOF
 server {
     listen 80;
     server_name _;
@@ -1386,7 +993,6 @@ server {
     }
 }
 EOF
-    fi
     systemctl enable nginx
     systemctl start nginx
     nginx -t && systemctl reload nginx
@@ -1413,7 +1019,6 @@ module.exports = {
     env: {
       NODE_ENV: 'production',
       OPENAI_API_KEY: '${OPENAI_KEY}',
-      ANTHROPIC_API_KEY: '${ANTHROPIC_KEY:-}',
       PORT: '${APP_PORT}',
       AUTH_USER: '${AUTH_USER:-}',
       AUTH_PASS: '${AUTH_PASS:-}'
@@ -1443,17 +1048,6 @@ else
 fi
 
 install_pm2
-
-# Install Guacamole if option 3 selected
-if [ "$INSTALL_GUACAMOLE" = true ]; then
-    echo ""
-    echo -e "${BLUE}Installing Guacamole Remote Desktop...${NC}"
-    if [ "$DETECTED_OS" == "debian" ]; then
-        install_guacamole_debian
-    else
-        install_guacamole_rocky
-    fi
-fi
 
 # Clone or create embedded
 if [ "$INSTALL_METHOD" == "1" ]; then
@@ -1529,17 +1123,6 @@ echo -e "  ${YELLOW}pm2 restart saic${NC}    - Restart application"
 echo -e "  ${YELLOW}pm2 monit${NC}           - Real-time monitoring dashboard"
 echo ""
 
-if [ "$INSTALL_GUACAMOLE" = true ]; then
-    echo -e "${CYAN}=== Guacamole Remote Desktop ===${NC}"
-    echo -e "  URL:          ${GREEN}http://$SERVER_IP/guacamole/${NC}"
-    echo -e "  Username:     ${GREEN}guacadmin${NC}"
-    echo -e "  Password:     ${GREEN}guacadmin${NC} (change immediately!)"
-    echo ""
-    echo -e "${CYAN}=== Claude AI Assistant ===${NC}"
-    echo -e "  URL:          ${GREEN}http://$SERVER_IP/assistant/${NC}"
-    echo ""
-fi
-
 # Create SSL setup script for later use
 cat > /usr/local/bin/saic-ssl << 'SSLEOF'
 #!/bin/bash
@@ -1548,12 +1131,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
-
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED}Error: Please run as root: sudo saic-ssl${NC}"
-    exit 1
-fi
 
 echo -e "${CYAN}=== SAIC SSL Certificate Setup ===${NC}"
 echo ""
@@ -1706,14 +1283,12 @@ echo -e "${CYAN}║                    SAIC STATUS CHECK                       �
 echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# System Info
 echo -e "${CYAN}=== System Info ===${NC}"
 echo -e "  Hostname:     $(hostname)"
 echo -e "  IP Address:   $(hostname -I | awk '{print $1}')"
 echo -e "  Uptime:       $(uptime -p 2>/dev/null || uptime)"
 echo ""
 
-# Services Status
 echo -e "${CYAN}=== Services Status ===${NC}"
 check_service() {
     local name=$1
@@ -1727,17 +1302,8 @@ check_service() {
 
 check_service "Nginx" "nginx"
 check_service "fail2ban" "fail2ban"
-
-# Check for Guacamole services
-if systemctl list-unit-files 2>/dev/null | grep -q "guacd"; then
-    check_service "guacd" "guacd"
-    check_service "Tomcat" "tomcat9"
-    check_service "MariaDB" "mariadb"
-fi
-
 echo ""
 
-# PM2 Status
 echo -e "${CYAN}=== PM2 Application ===${NC}"
 if command -v pm2 &> /dev/null; then
     pm2 list 2>/dev/null | grep -E "Name|saic" || echo -e "  ${YELLOW}No PM2 processes found${NC}"
@@ -1746,9 +1312,8 @@ else
 fi
 echo ""
 
-# Port Status
 echo -e "${CYAN}=== Open Ports ===${NC}"
-ss -tlnp 2>/dev/null | grep -E "LISTEN.*:(80|443|5000|8080|4822)" | while read line; do
+ss -tlnp 2>/dev/null | grep -E "LISTEN.*:(80|443|5000|8080)" | while read line; do
     port=$(echo $line | grep -oP ':\K\d+(?=\s)')
     echo -e "  Port $port: ${GREEN}[LISTENING]${NC}"
 done
@@ -1759,10 +1324,8 @@ chmod +x /usr/local/bin/saic-status
 # Create saic-logs helper script
 cat > /usr/local/bin/saic-logs << 'LOGSEOF'
 #!/bin/bash
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+GREEN='\033[0;32m'
 NC='\033[0m'
 
 echo -e "${CYAN}=== SAIC Log Viewer ===${NC}"
@@ -1773,44 +1336,16 @@ echo "  2) Nginx Access Log (last 50 lines)"
 echo "  3) Nginx Error Log (last 50 lines)"
 echo "  4) fail2ban Log (last 50 lines)"
 echo "  5) System Auth Log (last 50 lines)"
-echo "  6) All logs combined (live)"
 echo ""
-read -p "Enter choice [1-6]: " CHOICE
+read -p "Enter choice [1-5]: " CHOICE
 
 case $CHOICE in
-    1)
-        echo -e "${GREEN}Showing PM2 logs (Ctrl+C to exit)...${NC}"
-        pm2 logs saic
-        ;;
-    2)
-        echo -e "${GREEN}Nginx Access Log:${NC}"
-        tail -50 /var/log/nginx/access.log 2>/dev/null || echo "Log not found"
-        ;;
-    3)
-        echo -e "${GREEN}Nginx Error Log:${NC}"
-        tail -50 /var/log/nginx/error.log 2>/dev/null || echo "Log not found"
-        ;;
-    4)
-        echo -e "${GREEN}fail2ban Log:${NC}"
-        tail -50 /var/log/fail2ban.log 2>/dev/null || echo "Log not found"
-        ;;
-    5)
-        echo -e "${GREEN}Auth Log:${NC}"
-        if [ -f /var/log/auth.log ]; then
-            tail -50 /var/log/auth.log
-        elif [ -f /var/log/secure ]; then
-            tail -50 /var/log/secure
-        else
-            echo "Log not found"
-        fi
-        ;;
-    6)
-        echo -e "${GREEN}Combined logs (Ctrl+C to exit)...${NC}"
-        tail -f /var/log/nginx/access.log /var/log/nginx/error.log ~/.pm2/logs/*.log 2>/dev/null
-        ;;
-    *)
-        echo "Invalid choice"
-        ;;
+    1) echo -e "${GREEN}Showing PM2 logs (Ctrl+C to exit)...${NC}"; pm2 logs saic ;;
+    2) echo -e "${GREEN}Nginx Access Log:${NC}"; tail -50 /var/log/nginx/access.log 2>/dev/null || echo "Log not found" ;;
+    3) echo -e "${GREEN}Nginx Error Log:${NC}"; tail -50 /var/log/nginx/error.log 2>/dev/null || echo "Log not found" ;;
+    4) echo -e "${GREEN}fail2ban Log:${NC}"; tail -50 /var/log/fail2ban.log 2>/dev/null || echo "Log not found" ;;
+    5) if [ -f /var/log/auth.log ]; then tail -50 /var/log/auth.log; elif [ -f /var/log/secure ]; then tail -50 /var/log/secure; else echo "Log not found"; fi ;;
+    *) echo "Invalid choice" ;;
 esac
 LOGSEOF
 chmod +x /usr/local/bin/saic-logs
@@ -1818,10 +1353,9 @@ chmod +x /usr/local/bin/saic-logs
 # Create saic-stats helper script
 cat > /usr/local/bin/saic-stats << 'STATSEOF'
 #!/bin/bash
-RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
@@ -1829,45 +1363,28 @@ echo -e "${CYAN}║                    SAIC SERVER STATS                       �
 echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# CPU Usage
 echo -e "${CYAN}=== CPU Usage ===${NC}"
 cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)
 echo -e "  Usage:       ${GREEN}${cpu_usage}%${NC}"
 echo -e "  Load Avg:    $(cat /proc/loadavg | awk '{print $1, $2, $3}')"
 echo ""
 
-# Memory Usage
 echo -e "${CYAN}=== Memory Usage ===${NC}"
 mem_info=$(free -h | grep Mem)
-mem_total=$(echo $mem_info | awk '{print $2}')
-mem_used=$(echo $mem_info | awk '{print $3}')
-mem_free=$(echo $mem_info | awk '{print $4}')
-echo -e "  Total:       ${mem_total}"
-echo -e "  Used:        ${GREEN}${mem_used}${NC}"
-echo -e "  Free:        ${mem_free}"
+echo -e "  Total:       $(echo $mem_info | awk '{print $2}')"
+echo -e "  Used:        ${GREEN}$(echo $mem_info | awk '{print $3}')${NC}"
+echo -e "  Free:        $(echo $mem_info | awk '{print $4}')"
 echo ""
 
-# Disk Usage
 echo -e "${CYAN}=== Disk Usage ===${NC}"
 df -h / | tail -1 | awk '{printf "  Total:       %s\n  Used:        \033[0;32m%s (%s)\033[0m\n  Free:        %s\n", $2, $3, $5, $4}'
 echo ""
 
-# Network Stats
 echo -e "${CYAN}=== Network Connections ===${NC}"
 active_conn=$(ss -tun | grep ESTAB | wc -l)
 echo -e "  Active:      ${GREEN}${active_conn}${NC} established connections"
 echo ""
 
-# PM2 Process Stats
-echo -e "${CYAN}=== PM2 Process Stats ===${NC}"
-if command -v pm2 &> /dev/null; then
-    pm2 show saic 2>/dev/null | grep -E "status|memory|cpu|uptime|restarts" | head -6 || echo "  No PM2 process 'saic' found"
-else
-    echo "  PM2 not installed"
-fi
-echo ""
-
-# Quick htop hint
 echo -e "${YELLOW}Tip: Run 'htop' for interactive monitoring${NC}"
 echo ""
 STATSEOF
@@ -1887,49 +1404,33 @@ echo -e "${CYAN}║                 SAIC SECURITY STATUS                       �
 echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Firewall Status
 echo -e "${CYAN}=== Firewall Status ===${NC}"
 if command -v ufw &> /dev/null; then
     ufw_status=$(ufw status 2>/dev/null | head -1)
     if echo "$ufw_status" | grep -q "active"; then
         echo -e "  UFW:         ${GREEN}[ACTIVE]${NC}"
-        echo ""
-        echo -e "  ${YELLOW}Allowed Ports:${NC}"
-        ufw status | grep -E "ALLOW" | while read line; do
-            echo "    $line"
-        done
+        ufw status | grep -E "ALLOW" | while read line; do echo "    $line"; done
     else
         echo -e "  UFW:         ${RED}[INACTIVE]${NC}"
     fi
 elif command -v firewall-cmd &> /dev/null; then
     if systemctl is-active --quiet firewalld; then
         echo -e "  firewalld:   ${GREEN}[ACTIVE]${NC}"
-        echo ""
-        echo -e "  ${YELLOW}Allowed Services:${NC}"
-        firewall-cmd --list-all 2>/dev/null | grep -E "services:|ports:" | while read line; do
-            echo "    $line"
-        done
     else
         echo -e "  firewalld:   ${RED}[INACTIVE]${NC}"
     fi
 fi
 echo ""
 
-# fail2ban Status
 echo -e "${CYAN}=== fail2ban Status ===${NC}"
 if systemctl is-active --quiet fail2ban 2>/dev/null; then
     echo -e "  Status:      ${GREEN}[ACTIVE]${NC}"
-    echo ""
-    
-    # Get jail list and banned IPs
-    echo -e "  ${YELLOW}Active Jails:${NC}"
     jails=$(fail2ban-client status 2>/dev/null | grep "Jail list" | cut -d: -f2 | tr ',' '\n')
     for jail in $jails; do
         jail=$(echo $jail | xargs)
         if [ -n "$jail" ]; then
             banned=$(fail2ban-client status $jail 2>/dev/null | grep "Currently banned" | awk '{print $NF}')
-            total=$(fail2ban-client status $jail 2>/dev/null | grep "Total banned" | awk '{print $NF}')
-            echo -e "    $jail: ${GREEN}${banned}${NC} banned (${total} total)"
+            echo -e "    $jail: ${GREEN}${banned}${NC} banned"
         fi
     done
 else
@@ -1937,48 +1438,17 @@ else
 fi
 echo ""
 
-# Recent Failed Logins
-echo -e "${CYAN}=== Recent Failed Login Attempts (last 10) ===${NC}"
+echo -e "${CYAN}=== Recent Failed Logins (last 5) ===${NC}"
 if [ -f /var/log/auth.log ]; then
-    grep -i "failed\|failure" /var/log/auth.log 2>/dev/null | tail -10 | while read line; do
-        echo "  $line"
-    done
+    grep -i "failed" /var/log/auth.log 2>/dev/null | tail -5 | while read line; do echo "  $line"; done
 elif [ -f /var/log/secure ]; then
-    grep -i "failed\|failure" /var/log/secure 2>/dev/null | tail -10 | while read line; do
-        echo "  $line"
-    done
+    grep -i "failed" /var/log/secure 2>/dev/null | tail -5 | while read line; do echo "  $line"; done
 fi
 echo ""
 
-# Recent Successful SSH Logins
-echo -e "${CYAN}=== Recent SSH Logins (last 5) ===${NC}"
-last -5 2>/dev/null | head -5 | while read line; do
-    echo "  $line"
-done
-echo ""
-
-# Blocked IPs (if any)
-echo -e "${CYAN}=== Currently Banned IPs ===${NC}"
-banned_count=0
-if command -v fail2ban-client &> /dev/null; then
-    for jail in sshd nginx-http-auth nginx-limit-req nginx-botsearch; do
-        ips=$(fail2ban-client status $jail 2>/dev/null | grep "Banned IP" | cut -d: -f2)
-        if [ -n "$ips" ]; then
-            echo -e "  ${YELLOW}$jail:${NC} $ips"
-            banned_count=$((banned_count + 1))
-        fi
-    done
-fi
-if [ $banned_count -eq 0 ]; then
-    echo -e "  ${GREEN}No IPs currently banned${NC}"
-fi
-echo ""
-
-# Security Tips
 echo -e "${YELLOW}=== Security Tips ===${NC}"
 echo "  - Run 'saic-ssl' to enable HTTPS"
 echo "  - Run 'saic-passwd' to set password protection"
-echo "  - Check logs with 'saic-logs'"
 echo ""
 SECEOF
 chmod +x /usr/local/bin/saic-security

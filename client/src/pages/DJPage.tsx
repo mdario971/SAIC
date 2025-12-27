@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Header } from "@/components/Header";
 import { PromptInput } from "@/components/PromptInput";
@@ -123,13 +123,6 @@ export default function DJPage() {
 
   const previewVolume = (100 - crossfader) / 100 * previewAudio.volume;
   const masterVolume = crossfader / 100 * masterAudio.volume;
-
-  useEffect(() => {
-    const effectivePreviewVol = ((100 - crossfader) / 100) * 0.7;
-    const effectiveMasterVol = (crossfader / 100) * 0.7;
-    previewAudio.setVolume(effectivePreviewVol);
-    masterAudio.setVolume(effectiveMasterVol);
-  }, [crossfader, previewAudio.setVolume, masterAudio.setVolume]);
 
   return (
     <div className="flex flex-col h-[100dvh] bg-background">
