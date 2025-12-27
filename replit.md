@@ -40,7 +40,7 @@ The installer automatically detects and handles existing/failed installations:
 - Guacamole components (guacd, /etc/guacamole, WAR files)
 - MariaDB guacamole_db database
 - Port conflicts (5000, 8080, 4822)
-- Helper scripts (saic-ssl, saic-passwd)
+- Helper scripts (saic-ssl, saic-passwd, saic-status, saic-logs, saic-stats, saic-security)
 
 **User options when existing installation found:**
 1. **Clean reinstall** - Remove everything and start fresh
@@ -48,6 +48,23 @@ The installer automatically detects and handles existing/failed installations:
 3. **Abort** - Exit without changes
 
 Guacamole cleanup is handled separately with confirmation prompt.
+
+### Security Features
+
+The installer automatically configures:
+- **UFW/firewalld**: Firewall with only necessary ports open (22, 80, 443)
+- **fail2ban**: Brute-force protection for SSH and Nginx
+- **htop**: Interactive system monitoring
+
+### Helper Commands
+
+After installation, these commands are available:
+- `saic-status` - Check app, nginx, fail2ban, PM2 status
+- `saic-logs` - Interactive log viewer (PM2, Nginx, fail2ban, auth)
+- `saic-stats` - CPU, memory, disk, network overview
+- `saic-security` - Firewall status, banned IPs, failed logins
+- `saic-passwd` - Change/reset password protection
+- `saic-ssl` - Setup Let's Encrypt SSL certificate
 
 ## Project Architecture
 
