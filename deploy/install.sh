@@ -507,7 +507,11 @@ else
 fi
 echo -e "  Branch:       ${GREEN}$GIT_BRANCH${NC}"
 echo -e "  OS Type:      ${GREEN}$DETECTED_OS${NC}"
-echo -e "  OpenAI Key:   ${GREEN}sk-****${OPENAI_KEY: -4}${NC}"
+if [ -n "$OPENAI_KEY" ]; then
+    echo -e "  OpenAI Key:   ${GREEN}sk-****${OPENAI_KEY: -4}${NC}"
+else
+    echo -e "  OpenAI Key:   ${YELLOW}Not set${NC}"
+fi
 if [ -n "$ANTHROPIC_KEY" ]; then
     echo -e "  Anthropic:    ${GREEN}sk-ant-****${ANTHROPIC_KEY: -4}${NC}"
 fi
